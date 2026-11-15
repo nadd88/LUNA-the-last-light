@@ -13,7 +13,11 @@ import {
   TrendingUp, 
   FileText,
   Share2,
-  Sparkles
+  Sparkles,
+  ShieldCheck,
+  Thermometer,
+  Clock,
+  Heart
 } from 'lucide-react';
 import { calculateMissionScore } from '../../utils/physics';
 import { archiveCompletedMission } from '../../utils/storage';
@@ -86,13 +90,14 @@ export default function DebriefScreen({
     sound.playBeep(880, 0.08);
     const summary = `
 🚀 NASA Space Apps 2026 // LUNA: THE LAST LIGHT — Mission Debrief
-Site: ${selectedSite.name}
+Site: ${selectedSite?.name || 'Lunar South Pole'}
 Outcome: ${missionReport?.missionOutcome}
 Final Score: ${scoreResult.score} [Grade: ${scoreResult.grade}]
 Water Ice Extracted: ${missionReport?.waterIceDetectedKg || 0} kg
 Deepest PSR Penetration: ${missionReport?.maxDepthInPSR || 0} meters
 Scientific Points: ${missionReport?.scienceCollected || 0}
 Rover Health: ${missionReport?.roverHealth || 0}%
+Battery Remaining: ${missionReport?.batteryRemainingPercent || 0}%
     `.trim();
 
     navigator.clipboard.writeText(summary);
@@ -104,10 +109,10 @@ Rover Health: ${missionReport?.roverHealth || 0}%
     <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
       {/* Top Banner */}
       <div className={`hud-panel p-6 rounded-xl border mb-6 shadow-2xl ${
-        isSuccess ? 'border-cyan-400 bg-space-900/90 glow-cyan' : 'border-red-500 bg-red-950/40 glow-red'
+        isSuccess ? 'border-cyan-400 bg-space-900/90 shadow-[0_0_30px_rgba(0,240,255,0.2)]' : 'border-red-500 bg-red-950/40 shadow-[0_0_30px_rgba(239,68,68,0.2)]'
       }`}>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-700/60 pb-4 mb-4">
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3.5">
             <div className={`p-3 rounded-xl ${
               isSuccess ? 'bg-cyan-950 border border-cyan-400 text-cyan-300' : 'bg-red-950 border border-red-500 text-red-400'
             }`}>
@@ -129,7 +134,7 @@ Rover Health: ${missionReport?.roverHealth || 0}%
 
           <div className="text-right">
             <div className="text-xs font-mono text-slate-400">OVERALL RATING</div>
-            <div className="font-display text-3xl font-bold text-cyan-300">
+            <div className="font-display text-4xl font-bold text-cyan-300 drop-shadow-[0_0_15px_rgba(0,240,255,0.5)]">
               {scoreResult.grade}
             </div>
           </div>
@@ -138,8 +143,8 @@ Rover Health: ${missionReport?.roverHealth || 0}%
         {/* Narrative Forensic Summary */}
         <p className="text-sm text-slate-300 leading-relaxed mb-4">
           {isSuccess
-            ? `Commander, your rover successfully negotiated the extreme lighting and thermal boundaries of ${selectedSite.name}. By penetrating deep into the permanently shadowed region and managing limited battery reserves, you confirmed cryogenic volatile deposits essential for NASA's Artemis base.`
-            : `During the traverse down ${selectedSite.name}, your rover succumbed to extreme polar conditions: ${missionReport?.failureReason || 'Thermal starvation in 38K darkness'}. However, the scientific telemetry transmitted before loss of signal provides vital data for future robotic attempts.`}
+            ? `Commander, your rover successfully negotiated the extreme lighting and thermal boundaries of ${selectedSite?.name || 'the landing site'}. By penetrating deep into the permanently shadowed region and managing limited battery reserves, you confirmed cryogenic volatile deposits essential for NASA's Artemis base.`
+            : `During the traverse down ${selectedSite?.name || 'the landing site'}, your rover succumbed to extreme polar conditions: ${missionReport?.failureReason || 'Thermal starvation in 38K darkness'}. However, the scientific telemetry transmitted before loss of signal provides vital data for future robotic attempts.`}
         </p>
       </div>
 
@@ -198,6 +203,49 @@ Rover Health: ${missionReport?.roverHealth || 0}%
         </div>
       </div>
 
+      {/* Secondary Telemetry Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="p-3 rounded-lg bg-space-950/80 border border-slate-800 text-xs font-mono">
+          <div className="text-slate-400 flex items-center space-x-1 mb-1">
+            <Battery className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Residual Battery</span>
+          </div>
+          <div className="text-base font-bold text-cyan-300">
+            {missionReport?.batteryRemainingPercent || 0}%
+          </div>
+        </div>
+
+        <div className="p-3 rounded-lg bg-space-950/80 border border-slate-800 text-xs font-mono">
+          <div className="text-slate-400 flex items-center space-x-1 mb-1">
+            <Heart className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Rover Health</span>
+          </div>
+          <div className="text-base font-bold text-emerald-300">
+            {missionReport?.roverHealth || 0}%
+          </div>
+        </div>
+
+        <div className="p-3 rounded-lg bg-space-950/80 border border-slate-800 text-xs font-mono">
+          <div className="text-slate-400 flex items-center space-x-1 mb-1">
+            <Thermometer className="w-3.5 h-3.5 text-amber-400" />
+            <span>Final Core Temp</span>
+          </div>
+          <div className="text-base font-bold text-amber-300">
+            {missionReport?.finalTemp || '-45.0'} °C
+          </div>
+        </div>
+
+        <div className="p-3 rounded-lg bg-space-950/80 border border-slate-800 text-xs font-mono">
+          <div className="text-slate-400 flex items-center space-x-1 mb-1">
+            <Clock className="w-3.5 h-3.5 text-blue-400" />
+            <span>Surface Duration</span>
+          </div>
+          <div className="text-base font-bold text-blue-300">
+            {missionReport?.totalTraverseTicks ? `${missionReport.totalTraverseTicks * 2} min` : '42 min'}
+          </div>
+        </div>
+      </div>
+
       {/* Educational NASA Comparison Section */}
       <div className="hud-panel p-5 rounded-lg border border-cyan-500/20 bg-space-900/80 mb-6">
         <div className="text-xs font-mono text-cyan-400 font-bold mb-3 flex items-center space-x-2">
@@ -205,11 +253,11 @@ Rover Health: ${missionReport?.roverHealth || 0}%
           <span>EDUCATIONAL RETROSPECTIVE: HOW YOUR FLIGHT COMPARES TO NASA MISSIONS</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono text-slate-300 leading-relaxed">
-          <div className="p-3 rounded bg-space-950 border border-slate-800">
+          <div className="p-3.5 rounded bg-space-950 border border-slate-800">
             <strong className="text-cyan-300 block mb-1">NASA VIPER Parallel:</strong>
             NASA’s Volatiles Investigating Polar Exploration Rover (VIPER) was planned around the exact tactical trade-offs you faced: short solar-charging stints on high rims punctuated by daring traverses into pitch-black PSRs to drill for ice.
           </div>
-          <div className="p-3 rounded bg-space-950 border border-slate-800">
+          <div className="p-3.5 rounded bg-space-950 border border-slate-800">
             <strong className="text-amber-300 block mb-1">Thermal Survival Reality:</strong>
             Real lunar rovers require Radioisotope Heater Units (RHUs) or phase-change heat capacitors. Without them, lunar night or cold traps cool systems below -180°C, causing catastrophic structural failure.
           </div>
@@ -221,7 +269,7 @@ Rover Health: ${missionReport?.roverHealth || 0}%
         <div className="flex items-center space-x-3 w-full sm:w-auto">
           <button
             onClick={handleDownloadJSON}
-            className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded bg-space-900 hover:bg-space-800 border border-slate-700 hover:border-cyan-400 text-slate-200 font-mono text-xs transition-colors"
+            className="btn-secondary flex-1 sm:flex-none flex items-center justify-center space-x-1.5"
           >
             <Download className="w-3.5 h-3.5 text-cyan-400" />
             <span>Export Flight JSON</span>
@@ -229,10 +277,10 @@ Rover Health: ${missionReport?.roverHealth || 0}%
 
           <button
             onClick={handleCopySummary}
-            className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded bg-space-900 hover:bg-space-800 border border-slate-700 hover:border-cyan-400 text-slate-200 font-mono text-xs transition-colors"
+            className="btn-secondary flex-1 sm:flex-none flex items-center justify-center space-x-1.5"
           >
             <Copy className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{copied ? 'Copied!' : 'Copy Summary'}</span>
+            <span>{copied ? 'Copied to Clipboard!' : 'Copy Telemetry Summary'}</span>
           </button>
         </div>
 
@@ -241,7 +289,7 @@ Rover Health: ${missionReport?.roverHealth || 0}%
             sound.playBeep(980, 0.1);
             onRestart();
           }}
-          className="w-full sm:w-auto flex items-center justify-center space-x-2 px-7 py-3 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-display font-bold text-sm tracking-wider shadow-[0_0_20px_rgba(0,240,255,0.35)] transition-all transform hover:-translate-y-0.5"
+          className="btn-primary w-full sm:w-auto flex items-center justify-center space-x-2"
         >
           <RotateCcw className="w-4 h-4 text-slate-950" />
           <span>RUN ANOTHER EXPEDITION</span>
