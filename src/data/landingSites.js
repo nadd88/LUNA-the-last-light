@@ -22,7 +22,17 @@ export const LANDING_SITES = [
       { distance: 450, elevation: 320, illumination: 0, temp: -235 },
       { distance: 600, elevation: -200, illumination: 0, temp: -248 }
     ],
-    tacticalTip: 'High initial solar power on the rim, but steep slopes consume 30% more mobility power during descent.'
+    tacticalTip: 'High initial solar power on the rim, but steep slopes consume 30% more mobility power during descent.',
+    iceDepositProfile: {
+      description: 'Deep cryogenic deposits in Shackleton crater floor',
+      pockets: [
+        { x: 260, y: 280, concentration: 5.2, depth: 0.25 },
+        { x: 380, y: 340, concentration: 7.1, depth: 0.5 },
+        { x: 220, y: 430, concentration: 8.4, depth: 0.75 },
+        { x: 430, y: 490, concentration: 11.2, depth: 1.0 },
+        { x: 310, y: 530, concentration: 13.5, depth: 1.2 }
+      ]
+    }
   },
   {
     id: 'malapert-mountain',
@@ -44,7 +54,16 @@ export const LANDING_SITES = [
       { distance: 920, elevation: 2800, illumination: 0, temp: -220 },
       { distance: 1200, elevation: 2200, illumination: 0, temp: -238 }
     ],
-    tacticalTip: 'Earth communication is virtually uninterrupted (+12 dB margin), but travel distance to the nearest cold trap is long.'
+    tacticalTip: 'Earth communication is virtually uninterrupted (+12 dB margin), but travel distance to the nearest cold trap is long.',
+    iceDepositProfile: {
+      description: 'Dispersed low-to-moderate deposits in peripheral shadowed valleys',
+      pockets: [
+        { x: 230, y: 360, concentration: 2.4, depth: 0.35 },
+        { x: 370, y: 410, concentration: 3.1, depth: 0.6 },
+        { x: 470, y: 480, concentration: 3.8, depth: 0.85 },
+        { x: 190, y: 520, concentration: 4.1, depth: 1.1 }
+      ]
+    }
   },
   {
     id: 'connecting-ridge',
@@ -66,7 +85,18 @@ export const LANDING_SITES = [
       { distance: 320, elevation: 1450, illumination: 0, temp: -230 },
       { distance: 500, elevation: 1200, illumination: 0, temp: -245 }
     ],
-    tacticalTip: 'Shortest distance to dense ice deposits. Gentle slopes minimize battery drain during entry and escape.'
+    tacticalTip: 'Shortest distance to dense ice deposits. Gentle slopes minimize battery drain during entry and escape.',
+    iceDepositProfile: {
+      description: 'Abundant high-purity volatile deposits on shallow access ramps',
+      pockets: [
+        { x: 240, y: 255, concentration: 6.2, depth: 0.15 },
+        { x: 360, y: 280, concentration: 7.8, depth: 0.3 },
+        { x: 180, y: 360, concentration: 8.9, depth: 0.5 },
+        { x: 420, y: 410, concentration: 9.4, depth: 0.65 },
+        { x: 300, y: 480, concentration: 10.8, depth: 0.85 },
+        { x: 220, y: 530, concentration: 12.1, depth: 1.0 }
+      ]
+    }
   },
   {
     id: 'haworth-crater',
@@ -88,7 +118,18 @@ export const LANDING_SITES = [
       { distance: 300, elevation: -2600, illumination: 0, temp: -250 },
       { distance: 450, elevation: -2900, illumination: 0, temp: -252 }
     ],
-    tacticalTip: 'Extremely short battery recovery windows. Only robust thermal designs with high-capacity cells can survive here.'
+    tacticalTip: 'Extremely short battery recovery windows. Only robust thermal designs with high-capacity cells can survive here.',
+    iceDepositProfile: {
+      description: 'Primordial extreme volatile cold trap with deep high-grade ice pockets',
+      pockets: [
+        { x: 280, y: 250, concentration: 11.2, depth: 0.2 },
+        { x: 170, y: 300, concentration: 13.8, depth: 0.35 },
+        { x: 400, y: 360, concentration: 15.6, depth: 0.55 },
+        { x: 240, y: 430, concentration: 18.2, depth: 0.8 },
+        { x: 360, y: 490, concentration: 20.5, depth: 1.0 },
+        { x: 470, y: 535, concentration: 22.8, depth: 1.2 }
+      ]
+    }
   },
   {
     id: 'faustini-rim',
@@ -110,6 +151,43 @@ export const LANDING_SITES = [
       { distance: 510, elevation: 180, illumination: 0, temp: -234 },
       { distance: 700, elevation: -80, illumination: 0, temp: -246 }
     ],
-    tacticalTip: 'Balanced profile for generalist rovers. Safe staging with moderate traverse distance to the shadow line.'
+    tacticalTip: 'Balanced profile for generalist rovers. Safe staging with moderate traverse distance to the shadow line.',
+    iceDepositProfile: {
+      description: 'Stratified regolith ice layers across plateau cold trap floor',
+      pockets: [
+        { x: 250, y: 290, concentration: 4.5, depth: 0.3 },
+        { x: 390, y: 340, concentration: 5.4, depth: 0.45 },
+        { x: 180, y: 410, concentration: 6.1, depth: 0.65 },
+        { x: 330, y: 470, concentration: 6.8, depth: 0.85 },
+        { x: 450, y: 520, concentration: 7.9, depth: 1.0 }
+      ]
+    }
   }
 ];
+
+/**
+ * Returns procedural, landing-site-specific ice deposits for the simulation
+ * Clones template pockets so in-game actions (scan, drill) don't mutate static configurations
+ */
+export function getSiteIceDeposits(site) {
+  if (!site) return [];
+  const foundSite = LANDING_SITES.find((s) => s.id === site.id) || site;
+  if (foundSite.iceDepositProfile?.pockets) {
+    return foundSite.iceDepositProfile.pockets.map((dep, idx) => ({
+      id: `${foundSite.id}-dep-${idx}`,
+      x: dep.x,
+      y: dep.y,
+      concentration: dep.concentration,
+      depth: dep.depth,
+      scanned: false,
+      drilled: false
+    }));
+  }
+  // Generic fallback
+  return [
+    { id: 'dep-1', x: 260, y: 280, concentration: 4.8, depth: 0.2, scanned: false, drilled: false },
+    { id: 'dep-2', x: 380, y: 340, concentration: 7.2, depth: 0.5, scanned: false, drilled: false },
+    { id: 'dep-3', x: 220, y: 440, concentration: 11.4, depth: 0.8, scanned: false, drilled: false },
+    { id: 'dep-4', x: 420, y: 520, concentration: 14.8, depth: 1.0, scanned: false, drilled: false }
+  ];
+}
