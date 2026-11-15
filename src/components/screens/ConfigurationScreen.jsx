@@ -14,7 +14,9 @@ import {
   Info,
   DollarSign,
   Weight,
-  Zap
+  Zap,
+  CheckCircle2,
+  Gauge
 } from 'lucide-react';
 import { ROVER_COMPONENTS, MISSION_CONSTRAINTS } from '../../data/componentsData';
 import { sound } from '../../utils/sound';
@@ -124,8 +126,11 @@ export default function ConfigurationScreen({
             CUSTOMIZE MISSION PAYLOAD ARCHITECTURE
           </h2>
         </div>
-        <div className="text-xs font-mono text-slate-400 mt-2 sm:mt-0">
-          DESTINATION: <span className="text-cyan-300 font-bold">{selectedSite?.name || 'Shackleton Ridge'}</span>
+        <div className="text-xs font-mono text-slate-400 mt-2 sm:mt-0 flex items-center space-x-2">
+          <span>DESTINATION:</span>
+          <span className="text-cyan-300 font-bold px-2 py-0.5 rounded bg-space-900 border border-cyan-500/30">
+            {selectedSite?.name || 'Shackleton Ridge'}
+          </span>
         </div>
       </div>
 
@@ -133,12 +138,12 @@ export default function ConfigurationScreen({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         {/* Budget Gauge */}
         <div className={`hud-panel p-3.5 rounded-lg border transition-all ${
-          isBudgetExceeded ? 'border-red-500 bg-red-950/30' : 'border-cyan-500/30 bg-space-900/80'
+          isBudgetExceeded ? 'border-red-500 bg-red-950/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-cyan-500/30 bg-space-900/80'
         }`}>
           <div className="flex items-center justify-between text-xs font-mono mb-1.5">
             <span className="flex items-center space-x-1 text-slate-300">
               <DollarSign className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Mission Budget</span>
+              <span>Mission Budget Ceiling</span>
             </span>
             <span className={`font-bold ${isBudgetExceeded ? 'text-red-400' : 'text-cyan-300'}`}>
               ${totalCost}M / ${MISSION_CONSTRAINTS.maxBudget}M
@@ -154,18 +159,20 @@ export default function ConfigurationScreen({
           </div>
           <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-1">
             <span>Remaining: ${Math.max(0, MISSION_CONSTRAINTS.maxBudget - totalCost)}M</span>
-            <span>{isBudgetExceeded ? 'OVER BUDGET' : 'WITHIN CEILING'}</span>
+            <span className={isBudgetExceeded ? 'text-red-400 font-bold' : 'text-emerald-400'}>
+              {isBudgetExceeded ? 'OVER BUDGET' : 'WITHIN CEILING'}
+            </span>
           </div>
         </div>
 
         {/* Mass Gauge */}
         <div className={`hud-panel p-3.5 rounded-lg border transition-all ${
-          isMassExceeded ? 'border-red-500 bg-red-950/30' : 'border-cyan-500/30 bg-space-900/80'
+          isMassExceeded ? 'border-red-500 bg-red-950/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-cyan-500/30 bg-space-900/80'
         }`}>
           <div className="flex items-center justify-between text-xs font-mono mb-1.5">
             <span className="flex items-center space-x-1 text-slate-300">
               <Weight className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Launch Mass</span>
+              <span>Payload Launch Mass</span>
             </span>
             <span className={`font-bold ${isMassExceeded ? 'text-red-400' : 'text-cyan-300'}`}>
               {totalMass} kg / {MISSION_CONSTRAINTS.maxMass} kg
@@ -181,18 +188,20 @@ export default function ConfigurationScreen({
           </div>
           <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-1">
             <span>Payload Margin: {Math.max(0, MISSION_CONSTRAINTS.maxMass - totalMass)} kg</span>
-            <span>{isMassExceeded ? 'OVER MASS LIMIT' : 'NOMINAL PAYLOAD'}</span>
+            <span className={isMassExceeded ? 'text-red-400 font-bold' : 'text-emerald-400'}>
+              {isMassExceeded ? 'OVER MASS LIMIT' : 'NOMINAL PAYLOAD'}
+            </span>
           </div>
         </div>
 
         {/* Power Margin Gauge */}
         <div className={`hud-panel p-3.5 rounded-lg border transition-all ${
-          isPowerDeficit ? 'border-amber-500 bg-amber-950/30' : 'border-cyan-500/30 bg-space-900/80'
+          isPowerDeficit ? 'border-amber-500 bg-amber-950/30 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'border-cyan-500/30 bg-space-900/80'
         }`}>
           <div className="flex items-center justify-between text-xs font-mono mb-1.5">
             <span className="flex items-center space-x-1 text-slate-300">
               <Zap className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Sunlight Net Power</span>
+              <span>Sunlight Net Power Margin</span>
             </span>
             <span className={`font-bold ${isPowerDeficit ? 'text-amber-400' : 'text-emerald-300'}`}>
               +{netPowerMargin} W Net
@@ -208,7 +217,7 @@ export default function ConfigurationScreen({
           </div>
           <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-1">
             <span>Peak Gen: {peakSolarGen}W</span>
-            <span>Day Base Draw: {totalBasePowerDraw}W</span>
+            <span>Day Draw: {totalBasePowerDraw}W</span>
           </div>
         </div>
       </div>
@@ -217,7 +226,10 @@ export default function ConfigurationScreen({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
         {/* Left Subsystem Navigation Tabs (4 Cols) */}
         <div className="lg:col-span-4 space-y-2">
-          <div className="text-xs font-mono text-slate-400 mb-2">SUBSYSTEM SELECTION:</div>
+          <div className="text-xs font-mono text-slate-400 mb-2 flex items-center justify-between">
+            <span>SUBSYSTEM DIRECTORY:</span>
+            <span className="text-cyan-400 text-[10px] font-bold">STAGE 02</span>
+          </div>
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const isTabActive = activeTab === tab.id;
@@ -230,7 +242,7 @@ export default function ConfigurationScreen({
                 }}
                 className={`w-full flex items-center justify-between p-3 rounded-lg border font-mono text-xs transition-all ${
                   isTabActive
-                    ? 'bg-cyan-950/40 border-cyan-400 text-cyan-300 shadow-[0_0_12px_rgba(0,240,255,0.2)] font-bold'
+                    ? 'bg-cyan-950/60 border-cyan-400 text-cyan-300 shadow-[0_0_15px_rgba(0,240,255,0.2)] font-bold'
                     : 'bg-space-900/60 border-slate-700/60 hover:border-slate-500 text-slate-300 hover:bg-space-800'
                 }`}
               >
@@ -238,7 +250,9 @@ export default function ConfigurationScreen({
                   <Icon className={`w-4 h-4 ${isTabActive ? 'text-cyan-400' : 'text-slate-400'}`} />
                   <span>{tab.label}</span>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-space-950 border border-slate-800 text-slate-400">
+                <span className={`text-[10px] px-2 py-0.5 rounded border ${
+                  isTabActive ? 'bg-cyan-950 border-cyan-400/50 text-cyan-300' : 'bg-space-950 border-slate-800 text-slate-400'
+                }`}>
                   {tab.count}
                 </span>
               </button>
@@ -247,38 +261,62 @@ export default function ConfigurationScreen({
 
           {/* Interactive Rover Blueprint Schematic */}
           <div className="hud-panel p-4 rounded-lg border border-cyan-500/20 bg-space-950/90 mt-4 text-center">
-            <div className="text-[10px] font-mono text-cyan-400 tracking-wider mb-2">
-              PAYLOAD BLUEPRINT SCHEMATIC
+            <div className="text-[10px] font-mono text-cyan-400 tracking-wider mb-2 flex items-center justify-between">
+              <span>PAYLOAD BLUEPRINT SCHEMATIC</span>
+              <span className="text-[9px] text-slate-400">SCALE 1:20</span>
             </div>
-            <div className="relative h-32 w-full flex items-center justify-center border border-slate-800/80 rounded bg-space-900/40 overflow-hidden">
+            <div className="relative h-36 w-full flex items-center justify-center border border-slate-800 rounded bg-space-900/40 overflow-hidden">
               {/* Rover Schematic SVG */}
               <svg viewBox="0 0 200 120" className="w-full h-full p-2">
+                {/* Background Grid Pattern */}
+                <defs>
+                  <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
+                    <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#1e293b" strokeWidth="0.5"/>
+                  </pattern>
+                </defs>
+                <rect width="200" height="120" fill="url(#grid)" />
+
                 {/* Wheels */}
-                <rect x="25" y="85" width="25" height="15" rx="3" fill="#38bdf8" opacity="0.8" />
-                <rect x="85" y="85" width="30" height="15" rx="3" fill="#38bdf8" opacity="0.8" />
-                <rect x="150" y="85" width="25" height="15" rx="3" fill="#38bdf8" opacity="0.8" />
+                <rect x="25" y="85" width="25" height="15" rx="3" fill="#38bdf8" opacity="0.85" />
+                <rect x="85" y="85" width="30" height="15" rx="3" fill="#38bdf8" opacity="0.85" />
+                <rect x="150" y="85" width="25" height="15" rx="3" fill="#38bdf8" opacity="0.85" />
+                
                 {/* Suspension Rockers */}
                 <line x1="37" y1="85" x2="100" y2="65" stroke="#00f0ff" strokeWidth="2.5" />
                 <line x1="100" y1="65" x2="162" y2="85" stroke="#00f0ff" strokeWidth="2.5" />
+                
                 {/* Chassis Body */}
-                <rect x="50" y="45" width="100" height="30" rx="4" fill="#0c1224" stroke="#00f0ff" strokeWidth="2" />
-                <text x="100" y="64" fill="#93c5fd" fontSize="9" textAnchor="middle" fontFamily="monospace">
-                  LUNA ROVER
+                <rect x="50" y="45" width="100" height="30" rx="4" fill="#0c1224" stroke="#00f0ff" strokeWidth="1.8" />
+                <text x="100" y="64" fill="#93c5fd" fontSize="8" textAnchor="middle" fontFamily="monospace">
+                  LUNA ROVER CORE
                 </text>
+                
                 {/* Solar Mast */}
                 <line x1="75" y1="45" x2="75" y2="15" stroke="#f59e0b" strokeWidth="2.5" />
                 <rect x="60" y="8" width="30" height="12" rx="2" fill="#d97706" opacity="0.9" />
+                
                 {/* High-Gain Antenna Dish */}
                 <ellipse cx="135" cy="25" rx="14" ry="7" fill="none" stroke="#38bdf8" strokeWidth="2" />
                 <line x1="135" y1="32" x2="135" y2="45" stroke="#38bdf8" strokeWidth="2" />
+                
                 {/* Drill Instrument */}
                 {selectedInstruments.some(i => i.id.includes('drill')) && (
-                  <rect x="145" y="50" width="8" height="42" fill="#ef4444" rx="1" />
+                  <g>
+                    <rect x="145" y="50" width="8" height="42" fill="#ef4444" rx="1" />
+                    <line x1="149" y1="92" x2="149" y2="105" stroke="#ef4444" strokeWidth="2" strokeDasharray="2 2" />
+                  </g>
                 )}
+
+                {/* Dimension Callout */}
+                <line x1="25" y1="110" x2="175" y2="110" stroke="#64748b" strokeWidth="1" />
+                <text x="100" y="117" fill="#64748b" fontSize="7" textAnchor="middle" fontFamily="monospace">
+                  LENGTH: 1.85m // WHEELBASE: 1.4m
+                </text>
               </svg>
             </div>
-            <div className="text-[10px] font-mono text-slate-400 mt-2">
-              Active Suite: {chassis.name.split(' ')[0]} + {solar.name.split(' ')[0]} + {battery.name.split(' ')[0]}
+            <div className="text-[10px] font-mono text-slate-400 mt-2 flex items-center justify-between">
+              <span>Active Mass: <strong className="text-cyan-300">{totalMass} kg</strong></span>
+              <span>Draw: <strong className="text-amber-300">{totalBasePowerDraw}W</strong></span>
             </div>
           </div>
         </div>
@@ -305,13 +343,13 @@ export default function ConfigurationScreen({
                         }}
                         className={`p-4 rounded-lg border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                            ? 'bg-cyan-950/50 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
                             : 'bg-space-950/60 border-slate-700/60 hover:border-slate-500'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center space-x-2">
-                            <span className={`w-3 h-3 rounded-full flex items-center justify-center border ${
+                            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
                               isSelected ? 'border-cyan-400 bg-cyan-400' : 'border-slate-600'
                             }`}>
                               {isSelected && <Check className="w-2.5 h-2.5 text-slate-950" />}
@@ -357,13 +395,13 @@ export default function ConfigurationScreen({
                         }}
                         className={`p-4 rounded-lg border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                            ? 'bg-cyan-950/50 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
                             : 'bg-space-950/60 border-slate-700/60 hover:border-slate-500'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center space-x-2">
-                            <span className={`w-3 h-3 rounded-full flex items-center justify-center border ${
+                            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
                               isSelected ? 'border-cyan-400 bg-cyan-400' : 'border-slate-600'
                             }`}>
                               {isSelected && <Check className="w-2.5 h-2.5 text-slate-950" />}
@@ -409,13 +447,13 @@ export default function ConfigurationScreen({
                         }}
                         className={`p-4 rounded-lg border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                            ? 'bg-cyan-950/50 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
                             : 'bg-space-950/60 border-slate-700/60 hover:border-slate-500'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center space-x-2">
-                            <span className={`w-3 h-3 rounded-full flex items-center justify-center border ${
+                            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
                               isSelected ? 'border-cyan-400 bg-cyan-400' : 'border-slate-600'
                             }`}>
                               {isSelected && <Check className="w-2.5 h-2.5 text-slate-950" />}
@@ -461,13 +499,13 @@ export default function ConfigurationScreen({
                         }}
                         className={`p-4 rounded-lg border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                            ? 'bg-cyan-950/50 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
                             : 'bg-space-950/60 border-slate-700/60 hover:border-slate-500'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center space-x-2">
-                            <span className={`w-3 h-3 rounded-full flex items-center justify-center border ${
+                            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
                               isSelected ? 'border-cyan-400 bg-cyan-400' : 'border-slate-600'
                             }`}>
                               {isSelected && <Check className="w-2.5 h-2.5 text-slate-950" />}
@@ -513,13 +551,13 @@ export default function ConfigurationScreen({
                         }}
                         className={`p-4 rounded-lg border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                            ? 'bg-cyan-950/50 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
                             : 'bg-space-950/60 border-slate-700/60 hover:border-slate-500'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center space-x-2">
-                            <span className={`w-3 h-3 rounded-full flex items-center justify-center border ${
+                            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
                               isSelected ? 'border-cyan-400 bg-cyan-400' : 'border-slate-600'
                             }`}>
                               {isSelected && <Check className="w-2.5 h-2.5 text-slate-950" />}
@@ -554,7 +592,7 @@ export default function ConfigurationScreen({
                     <h3 className="font-display font-bold text-lg text-slate-100">Select Scientific Instruments (Multi-Select)</h3>
                     <p className="text-xs text-slate-400 font-mono">Install sensors and drills to detect hydrogen and extract water ice.</p>
                   </div>
-                  <span className="text-xs font-mono px-2.5 py-1 rounded bg-cyan-950 border border-cyan-400 text-cyan-300">
+                  <span className="text-xs font-mono px-2.5 py-1 rounded bg-cyan-950 border border-cyan-400 text-cyan-300 font-bold">
                     {selectedInstruments.length} Installed
                   </span>
                 </div>
@@ -567,7 +605,7 @@ export default function ConfigurationScreen({
                         onClick={() => toggleInstrument(item)}
                         className={`p-4 rounded-lg border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                            ? 'bg-cyan-950/50 border-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.2)]'
                             : 'bg-space-950/60 border-slate-700/60 hover:border-slate-500'
                         }`}
                       >
@@ -621,7 +659,7 @@ export default function ConfigurationScreen({
             sound.playBeep(700, 0.05);
             onBack();
           }}
-          className="px-5 py-2.5 rounded border border-slate-700 hover:border-slate-500 text-slate-300 font-mono text-xs transition-colors"
+          className="btn-secondary"
         >
           ← Change Landing Site
         </button>
@@ -629,10 +667,10 @@ export default function ConfigurationScreen({
         <button
           onClick={handleLaunch}
           disabled={!isValidLaunch}
-          className={`flex items-center space-x-2 px-7 py-3 rounded font-display font-bold text-sm tracking-wider transition-all ${
+          className={`flex items-center space-x-2 px-8 py-3.5 rounded-lg font-display font-bold text-sm tracking-wider transition-all ${
             isValidLaunch
-              ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 shadow-[0_0_25px_rgba(0,240,255,0.4)] cursor-pointer transform hover:-translate-y-0.5'
-              : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+              ? 'btn-primary'
+              : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
           }`}
         >
           <span>DEPLOY TO LUNAR SURFACE</span>

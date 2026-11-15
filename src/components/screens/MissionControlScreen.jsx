@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Activity, 
   Battery, 
@@ -12,7 +12,11 @@ import {
   TrendingUp, 
   ArrowRight,
   Database,
-  Satellite
+  Satellite,
+  Wifi,
+  Clock,
+  Compass,
+  CheckCircle2
 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { sound } from '../../utils/sound';
@@ -24,7 +28,7 @@ export default function MissionControlScreen({
   onBack
 }) {
   // Generate baseline telemetry trend data
-  const [telemetryHistory, setTelemetryHistory] = useState([
+  const [telemetryHistory] = useState([
     { minute: 0, powerGen: roverConfig.peakSolarGen, powerDraw: roverConfig.totalBasePowerDraw, batterySoC: 100, coreTemp: -35 },
     { minute: 5, powerGen: roverConfig.peakSolarGen, powerDraw: roverConfig.totalBasePowerDraw, batterySoC: 100, coreTemp: -34 },
     { minute: 10, powerGen: roverConfig.peakSolarGen, powerDraw: roverConfig.totalBasePowerDraw, batterySoC: 99, coreTemp: -35 },
@@ -34,7 +38,7 @@ export default function MissionControlScreen({
   return (
     <div className="relative z-10 max-w-6xl mx-auto px-4 py-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 pb-3 border-b border-cyan-500/20">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 pb-3 border-b border-cyan-500/20 gap-2">
         <div>
           <div className="text-[11px] font-mono text-cyan-400 tracking-wider flex items-center space-x-1.5">
             <Activity className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
@@ -44,9 +48,29 @@ export default function MissionControlScreen({
             FLIGHT SYSTEM HEALTH & PRE-DESCENT STATUS
           </h2>
         </div>
-        <div className="text-xs font-mono text-slate-400 mt-2 sm:mt-0 flex items-center space-x-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>DSN CARRIER LOCKED // GOLDSTONE 70M</span>
+        <div className="text-xs font-mono text-slate-400 flex items-center space-x-2 bg-space-950/80 px-3 py-1.5 rounded-lg border border-slate-800">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
+          <span>DSN CARRIER LOCKED // DSS-14 GOLDSTONE 70M</span>
+        </div>
+      </div>
+
+      {/* DSN Tracking & Orbital Carrier Banner */}
+      <div className="hud-panel p-3.5 rounded-lg border border-cyan-500/30 bg-space-950/80 mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+        <div>
+          <span className="text-slate-400 block text-[10px]">UPLINK FREQ</span>
+          <span className="text-cyan-300 font-bold">7.190 GHz (X-Band)</span>
+        </div>
+        <div>
+          <span className="text-slate-400 block text-[10px]">SIGNAL-TO-NOISE</span>
+          <span className="text-emerald-400 font-bold">+31.8 dB (NOMINAL)</span>
+        </div>
+        <div>
+          <span className="text-slate-400 block text-[10px]">ONE-WAY LIGHT TIME</span>
+          <span className="text-slate-200 font-bold">1.284 seconds</span>
+        </div>
+        <div>
+          <span className="text-slate-400 block text-[10px]">ORBITAL EPHEMERIS</span>
+          <span className="text-cyan-300 font-bold">LRO POLAR 50KM PASS</span>
         </div>
       </div>
 
@@ -61,7 +85,7 @@ export default function MissionControlScreen({
             {roverConfig.peakSolarGen} W
           </div>
           <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            Sun Angle: 1.8° Horizon Grazing
+            Sun Elevation: 1.8° Grazing
           </div>
         </div>
 
@@ -74,7 +98,7 @@ export default function MissionControlScreen({
             {roverConfig.battery.capacity} Wh
           </div>
           <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            Solid-State Reserve: 100%
+            Core State of Charge: 100%
           </div>
         </div>
 
@@ -87,7 +111,7 @@ export default function MissionControlScreen({
             -35.0 °C
           </div>
           <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            Thermal Margin: +140°C above limit
+            Margin: +140°C above limit
           </div>
         </div>
 
@@ -100,7 +124,7 @@ export default function MissionControlScreen({
             {roverConfig.comm.bandwidth} kbps
           </div>
           <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            Latency: 2.6s (Round-trip)
+            Link Margin: +14.2 dB
           </div>
         </div>
       </div>
@@ -126,27 +150,28 @@ export default function MissionControlScreen({
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#070b18', borderColor: '#00f0ff', fontSize: '11px', fontFamily: 'monospace' }}
                   />
-                  <Line type="monotone" dataKey="powerGen" name="Solar Gen (W)" stroke="#00f0ff" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="powerDraw" name="Avionics Draw (W)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="powerGen" name="Solar Gen (W)" stroke="#00f0ff" strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="powerDraw" name="Avionics Draw (W)" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
             <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-2">
-              <span>● Cyan: Solar Array Input ({roverConfig.peakSolarGen}W)</span>
-              <span>● Amber: Base Power Load ({roverConfig.totalBasePowerDraw}W)</span>
+              <span className="text-cyan-400 font-bold">● Cyan: Solar Array Input ({roverConfig.peakSolarGen}W)</span>
+              <span className="text-amber-400 font-bold">● Amber: Base Power Load ({roverConfig.totalBasePowerDraw}W)</span>
             </div>
           </div>
 
           <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/80">
-            <div className="text-xs font-mono text-slate-300 font-bold mb-2">
-              MISSION FLIGHT PLAN TRAVERSE BRIEF:
+            <div className="text-xs font-mono text-cyan-400 font-bold mb-2 flex items-center space-x-2">
+              <Compass className="w-3.5 h-3.5 text-cyan-400" />
+              <span>MISSION FLIGHT PLAN TRAVERSE BRIEF:</span>
             </div>
-            <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
+            <div className="text-xs text-slate-300 space-y-2 leading-relaxed font-mono">
               <p>
                 1. <strong>Rim Staging:</strong> The rover is currently positioned on the sunlit crest of {selectedSite.name}. All power systems are fully charged.
               </p>
               <p>
-                2. <strong>Descent into PSR:</strong> Once descending past the shadow line ({selectedSite.psrDistance} meters away), solar power will immediately drop to <strong>0.0 Watts</strong>.
+                2. <strong>Descent into PSR:</strong> Once descending past the shadow line ({selectedSite.psrDistance} meters away), solar generation immediately collapses to <strong>0.0 Watts</strong>.
               </p>
               <p>
                 3. <strong>Prospecting Execution:</strong> Activate the Neutron Spectrometer (NSS) and TRIDENT Drill when approaching suspected volatile traps to sample water ice.
@@ -159,8 +184,8 @@ export default function MissionControlScreen({
         <div className="lg:col-span-5 space-y-4">
           <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/80">
             <div className="text-xs font-mono text-cyan-400 font-bold mb-3 flex items-center justify-between">
-              <span>PAYLOAD HARDWARE MANIFEST</span>
-              <span className="text-emerald-400 text-[10px]">ALL GREEN</span>
+              <span>FLIGHT DIRECTOR GO / NO-GO STATUS</span>
+              <span className="text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50">ALL SUBSYSTEMS GO</span>
             </div>
 
             <div className="space-y-2 text-xs font-mono">
@@ -169,7 +194,7 @@ export default function MissionControlScreen({
                   <div className="text-slate-200 font-bold">{roverConfig.chassis.name}</div>
                   <div className="text-[10px] text-slate-400">Mobility • {roverConfig.chassis.slopeCapability}° Slope Limit</div>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/40">ONLINE</span>
+                <span className="badge-pass">GO</span>
               </div>
 
               <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
@@ -177,7 +202,7 @@ export default function MissionControlScreen({
                   <div className="text-slate-200 font-bold">{roverConfig.solar.name}</div>
                   <div className="text-[10px] text-slate-400">Generation • {roverConfig.solar.generation}W Peak</div>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/40">DEPLOYED</span>
+                <span className="badge-pass">GO</span>
               </div>
 
               <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
@@ -185,7 +210,7 @@ export default function MissionControlScreen({
                   <div className="text-slate-200 font-bold">{roverConfig.battery.name}</div>
                   <div className="text-[10px] text-slate-400">Energy • {roverConfig.battery.capacity} Wh Storage</div>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/40">ARMED</span>
+                <span className="badge-pass">GO</span>
               </div>
 
               <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
@@ -193,7 +218,7 @@ export default function MissionControlScreen({
                   <div className="text-slate-200 font-bold">{roverConfig.thermal.name}</div>
                   <div className="text-[10px] text-slate-400">Thermal • {roverConfig.thermal.heatOutput}W Output</div>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/40">READY</span>
+                <span className="badge-pass">GO</span>
               </div>
 
               <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
@@ -201,7 +226,15 @@ export default function MissionControlScreen({
                   <div className="text-slate-200 font-bold">{roverConfig.comm.name}</div>
                   <div className="text-[10px] text-slate-400">Telecom • {roverConfig.comm.dteRange}</div>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/40">LOCKED</span>
+                <span className="badge-pass">GO</span>
+              </div>
+
+              <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <div className="text-slate-200 font-bold">Science Suite ({roverConfig.instruments?.length || 0} Instruments)</div>
+                  <div className="text-[10px] text-slate-400">Payload Active</div>
+                </div>
+                <span className="badge-pass">GO</span>
               </div>
             </div>
           </div>
@@ -215,7 +248,7 @@ export default function MissionControlScreen({
             sound.playBeep(700, 0.05);
             onBack();
           }}
-          className="px-5 py-2.5 rounded border border-slate-700 hover:border-slate-500 text-slate-300 font-mono text-xs transition-colors"
+          className="btn-secondary"
         >
           ← Adjust Configuration
         </button>
@@ -225,7 +258,7 @@ export default function MissionControlScreen({
             sound.playBeep(980, 0.1);
             onLaunchSurfaceOps();
           }}
-          className="flex items-center space-x-2 px-8 py-3.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-display font-bold text-sm tracking-wider shadow-[0_0_25px_rgba(0,240,255,0.4)] transition-all transform hover:-translate-y-0.5"
+          className="btn-primary flex items-center space-x-2"
         >
           <Play className="w-4 h-4 text-slate-950 fill-current" />
           <span>START SURFACE EXPLORATION</span>
