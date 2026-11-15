@@ -33,6 +33,7 @@ import {
   getThermalStatus 
 } from '../../utils/physics';
 import { EMERGENCY_EVENTS } from '../../data/eventsData';
+import { getSiteIceDeposits } from '../../data/landingSites';
 import { sound } from '../../utils/sound';
 import EmergencyModal from './EmergencyModal';
 import Lunar3DEnvironment from '../../visualization/Lunar3DEnvironment';
@@ -90,13 +91,18 @@ export default function SimulationScreen({
   const [activeEmergency, setActiveEmergency] = useState(null);
   const [triggeredEventKeys, setTriggeredEventKeys] = useState(new Set());
 
-  // Ice deposits in the PSR
-  const iceDepositsRef = useRef([
-    { x: 260, y: 280, concentration: 4.8, depth: 0.2, scanned: false, drilled: false },
-    { x: 380, y: 340, concentration: 7.2, depth: 0.5, scanned: false, drilled: false },
-    { x: 220, y: 440, concentration: 11.4, depth: 0.8, scanned: false, drilled: false },
-    { x: 420, y: 520, concentration: 14.8, depth: 1.0, scanned: false, drilled: false }
-  ]);
+  // Waypoint navigation state
+  const [waypoint, setWaypoint] = useState(null); // { x: number, y: number } | null
+
+  // Landing-site-specific procedural ice deposits in the PSR
+  const [iceDeposits, setIceDeposits] = useState(() => getSiteIceDeposits(selectedSite));
+  const iceDepositsRef = useRef(iceDeposits);
+
+  useEffect(() => {
+    const deposits = getSiteIceDeposits(selectedSite);
+    setIceDeposits(deposits);
+    iceDepositsRef.current = deposits;
+  }, [selectedSite]);
 
   const addLog = useCallback((text, type = 'info') => {
     setLogs((prev) => [
@@ -384,6 +390,7 @@ export default function SimulationScreen({
 
   // Move Rover Action (for button single click taps)
   const handleMove = (direction) => {
+    if (waypoint) setWaypoint(null); // Manual drive cancels autonomous waypoint navigation
     sound.playDrive();
     if (direction === 'forward') {
       setDriveCommand((p) => ({ ...p, forward: true }));
@@ -396,6 +403,7 @@ export default function SimulationScreen({
 
   // Turn Rover Action (for button single click taps)
   const handleTurn = (deltaDeg) => {
+    if (waypoint) setWaypoint(null); // Manual steer cancels autonomous waypoint navigation
     sound.playBeep(700, 0.04);
     if (deltaDeg < 0) {
       setDriveCommand((p) => ({ ...p, left: true }));
@@ -404,6 +412,173 @@ export default function SimulationScreen({
       setDriveCommand((p) => ({ ...p, right: true }));
       setTimeout(() => setDriveCommand((p) => ({ ...p, right: false })), 350);
     }
+  };
+
+  // Canvas Click-to-Move Waypoint Handler
+  const handleCanvasClick = (e) => {
+    if (activeEmergency) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clickX = Math.round((e.clientX - rect.left) * scaleX);
+    const clickY = Math.round((e.clientY - rect.top) * scaleY);
+
+    // Clamp coordinates within operational canvas bounds
+    const targetX = Math.max(40, Math.min(560, clickX));
+    const targetY = Math.max(60, Math.min(560, clickY));
+
+    // If clicking near rover, cancel waypoint station keeping
+    const distToRover = Math.hypot(targetX - roverPos.x, targetY - roverPos.y);
+    if (distToRover < 18) {
+      setWaypoint(null);
+      sound.playBeep(450, 0.05);
+      addLog('Autonomous waypoint navigation cancelled by operator.', 'info');
+      return;
+    }
+
+    setWaypoint({ x: targetX, y: targetY });
+    sound.playBeep(880, 0.06);
+    addLog(`Waypoint beacon locked at [${targetX}, ${targetY}]. Autonomous drive sequence engaged.`, 'info');
+  };
+
+  // Autonomous Waypoint Navigation Loop
+  useEffect(() => {
+    if (!waypoint) return;
+
+    const navInterval = setInterval(() => {
+      setRoverPos((prev) => {
+        const dx = waypoint.x - prev.x;
+        const dy = waypoint.y - prev.y;
+        const dist = Math.hypot(dx, dy);
+
+        // Arrival condition (within 14px radius)
+        if (dist < 14) {
+          setWaypoint(null);
+          sound.playVictory();
+          addLog(`Waypoint station reached at [${waypoint.x}, ${waypoint.y}]. Holding position.`, 'success');
+          return prev;
+        }
+
+        // Low battery emergency cutoff
+        if (batteryWh <= 15) {
+          setWaypoint(null);
+          sound.playWarning();
+          addLog('WAYPOINT SEQUENCE ABORTED: Low battery reserve (<15 Wh). Holding position.', 'warning');
+          return prev;
+        }
+
+        // Steer heading towards waypoint bearing
+        const targetDeg = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+        setRoverHeading((prevHead) => {
+          let diff = (targetDeg - prevHead + 360) % 360;
+          if (diff > 180) diff -= 360;
+          if (Math.abs(diff) > 15) {
+            const turnStep = Math.sign(diff) * Math.min(30, Math.abs(diff));
+            return (prevHead + turnStep + 360) % 360;
+          }
+          return Math.round(targetDeg);
+        });
+
+        // Advance toward waypoint
+        const stepDist = speedMode === 'DASH' ? 18 : speedMode === 'CAUTIOUS' ? 8 : 12;
+        const moveDist = Math.min(stepDist, dist);
+        const rad = Math.atan2(dy, dx);
+        const nextX = Math.max(40, Math.min(560, prev.x + Math.cos(rad) * moveDist));
+        const nextY = Math.max(60, Math.min(560, prev.y + Math.sin(rad) * moveDist));
+
+        setTracks((tr) => [...tr.slice(-50), { x: nextX, y: nextY }]);
+
+        const currentDepth = Math.max(0, Math.round((nextY - 230) * 1.5));
+        setDepthInPSR(currentDepth);
+        setMaxDepthExplored((m) => Math.max(m, currentDepth));
+
+        const moveCost = speedMode === 'DASH' ? 8 : 4;
+        setBatteryWh((b) => Math.max(0, b - moveCost));
+
+        return { x: nextX, y: nextY };
+      });
+    }, 280);
+
+    return () => clearInterval(navInterval);
+  }, [waypoint, speedMode, batteryWh, addLog]);
+
+  // Keyboard Navigation: WASD & Arrow Keys
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (activeEmergency) return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'w' || key === 'arrowup') {
+        e.preventDefault();
+        handleMove('forward');
+      } else if (key === 's' || key === 'arrowdown') {
+        e.preventDefault();
+        handleMove('reverse');
+      } else if (key === 'a' || key === 'arrowleft') {
+        e.preventDefault();
+        handleTurn(-30);
+      } else if (key === 'd' || key === 'arrowright') {
+        e.preventDefault();
+        handleTurn(30);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeEmergency, waypoint, isMoving, speedMode, roverHeading]);
+
+  // Functional Wait for Sun / Solar Recharge Action
+  const handleWaitSolarRecharge = () => {
+    // NASA Flight Rule: Solar recharge inside cold trap is strictly impossible
+    if (isInsidePSR) {
+      sound.playAlarm();
+      addLog('RECHARGE REJECTED: Rover is inside Permanently Shadowed Region (0.0 W solar flux). Stationary dwell will cause cryogenic freezing!', 'danger');
+      return;
+    }
+
+    if (batteryWh >= maxBatteryWh - 0.5) {
+      sound.playBeep(600, 0.05);
+      addLog('SOLAR RECHARGE: Battery cells are already at 100% capacity.', 'info');
+      return;
+    }
+
+    const currentSolarWatts = calculateSolarPower(roverConfig.solar, currentIllumination);
+    const idleDrawWatts = calculatePowerDraw(roverConfig, {
+      isMoving: false,
+      isScanning: false,
+      isDrilling: false,
+      heaterState: heaterMode
+    });
+
+    const netSurplusWatts = currentSolarWatts - idleDrawWatts;
+
+    if (netSurplusWatts <= 0) {
+      sound.playWarning();
+      addLog(`INSUFFICIENT SOLAR FLUX: Net power is ${netSurplusWatts} W. Illumination (${currentIllumination}%) too low to recharge battery with active heater draw.`, 'warning');
+      return;
+    }
+
+    // 20-minute solar soak dwell
+    const dwellMinutes = 20;
+    const gainedWh = Math.round(netSurplusWatts * (dwellMinutes / 60) * 10) / 10;
+    const nextBatteryWh = Math.min(maxBatteryWh, Math.round((batteryWh + gainedWh) * 10) / 10);
+
+    setBatteryWh(nextBatteryWh);
+    setMissionElapsedMinutes((m) => m + dwellMinutes);
+
+    // Avionics passively warms toward daytime ambient baseline (-45°C)
+    setCoreTempC((prev) => {
+      const targetAmbient = currentAmbientTemp;
+      const warmed = prev + (targetAmbient - prev) * 0.35;
+      return Math.round(warmed * 10) / 10;
+    });
+
+    sound.playVictory();
+    addLog(`SOLAR DWELL COMPLETE (+${dwellMinutes}m): Harvested +${gainedWh} Wh solar energy. Battery storage at ${Math.round((nextBatteryWh / maxBatteryWh) * 100)}%.`, 'success');
   };
 
   // Scan Regolith Action
@@ -428,6 +603,9 @@ export default function SimulationScreen({
           addLog(`ICE ANOMALY CONFIRMED: ${dep.concentration}% wt eq H₂O detected at ${dep.depth}m depth! (+${detectedKg}kg, +45 Science)`, 'success');
         }
       });
+      if (foundIce) {
+        setIceDeposits([...iceDepositsRef.current]);
+      }
 
       if (!foundIce) {
         if (isInsidePSR) {
@@ -477,6 +655,9 @@ export default function SimulationScreen({
           addLog(`DRILL SUCCESS: Extracted 100cm pristine cryogenic ice core! Yield: ${coreIceKg}kg H₂O (+85 Science)`, 'success');
         }
       });
+      if (drilledDeposit) {
+        setIceDeposits([...iceDepositsRef.current]);
+      }
 
       if (!drilledDeposit) {
         setDrillCores((d) => d + 1);
@@ -748,7 +929,55 @@ export default function SimulationScreen({
     ctx.stroke();
 
     ctx.restore();
-  }, [roverPos, roverHeading, tracks, isInsidePSR, viewMode]);
+
+    // 11. Render Active Waypoint Beacon & Autonomous Guidance Vector
+    if (waypoint) {
+      ctx.save();
+      // Dashed flight vector from rover to target
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(roverPos.x, roverPos.y);
+      ctx.lineTo(waypoint.x, waypoint.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Outer targeting ring
+      ctx.beginPath();
+      ctx.arc(waypoint.x, waypoint.y, 13, 0, Math.PI * 2);
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Pulsing inner beacon circle
+      ctx.beginPath();
+      ctx.arc(waypoint.x, waypoint.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#00f0ff';
+      ctx.fill();
+
+      // Crosshair reticle marks
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.85)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(waypoint.x - 17, waypoint.y);
+      ctx.lineTo(waypoint.x - 7, waypoint.y);
+      ctx.moveTo(waypoint.x + 7, waypoint.y);
+      ctx.lineTo(waypoint.x + 17, waypoint.y);
+      ctx.moveTo(waypoint.x, waypoint.y - 17);
+      ctx.lineTo(waypoint.x, waypoint.y - 7);
+      ctx.moveTo(waypoint.x, waypoint.y + 7);
+      ctx.lineTo(waypoint.x, waypoint.y + 17);
+      ctx.stroke();
+
+      // Waypoint distance badge
+      const distMeters = Math.round(Math.hypot(waypoint.x - roverPos.x, waypoint.y - roverPos.y) * 1.5);
+      ctx.fillStyle = '#67e8f9';
+      ctx.font = '10px monospace';
+      ctx.fillText(`WAYPOINT [${distMeters}m]`, waypoint.x + 15, waypoint.y - 8);
+      ctx.restore();
+    }
+  }, [roverPos, roverHeading, tracks, isInsidePSR, waypoint, iceDeposits, viewMode]);
 
   // Complete Mission handler (return to base or conclude)
   const handleDeclareCompletion = () => {
@@ -907,13 +1136,34 @@ export default function SimulationScreen({
                 <span>ZONE: {isInsidePSR ? 'PERMANENTLY SHADOWED REGION (0.0 W)' : 'SUNLIT SUMMIT CREST'}</span>
               </div>
 
+              {waypoint && (
+                <div className="absolute top-3 right-3 z-10 bg-cyan-950/90 backdrop-blur border border-cyan-500/80 px-2.5 py-1 rounded text-[11px] font-mono text-cyan-300 flex items-center space-x-2 animate-pulse">
+                  <Navigation className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+                  <span>WAYPOINT: [{waypoint.x}, {waypoint.y}]</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWaypoint(null);
+                      sound.playBeep(450, 0.05);
+                    }}
+                    className="ml-1 text-slate-400 hover:text-white font-bold"
+                    title="Cancel Waypoint"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               <canvas
                 ref={canvasRef}
+                onClick={handleCanvasClick}
                 className="w-full h-auto aspect-square rounded border border-slate-800 bg-black cursor-crosshair"
+                title="Click anywhere on terrain to set waypoint autonomous navigation"
               />
 
               <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 px-2 py-1">
                 <span>Top: Sunlit Rim Crest (+88% Illum)</span>
+                <span className="text-cyan-400/90 font-bold">CLICK CANVAS FOR WAYPOINT NAV</span>
                 <span>Bottom: Cryogenic Cold Trap (-238°C)</span>
               </div>
             </div>
@@ -933,7 +1183,7 @@ export default function SimulationScreen({
             </div>
 
             {/* Directional Pad */}
-            <div className="grid grid-cols-3 gap-2 max-w-[240px] mx-auto mb-4">
+            <div className="grid grid-cols-3 gap-2 max-w-[240px] mx-auto mb-3">
               <div />
               <button
                 onMouseDown={() => setDriveCommand((p) => ({ ...p, forward: true }))}
@@ -1002,6 +1252,23 @@ export default function SimulationScreen({
                   <span>STEER R</span>
                   <span className="text-[8px] opacity-60">D/→</span>
                 </span>
+              </button>
+            </div>
+
+            {/* Functional Wait for Sun / Solar Recharge Action */}
+            <div className="mb-3">
+              <button
+                onClick={handleWaitSolarRecharge}
+                disabled={isMoving || isScanning || isDrilling}
+                className={`w-full p-2.5 rounded border font-mono text-xs flex items-center justify-center space-x-2 transition-all ${
+                  isInsidePSR
+                    ? 'border-red-900/60 bg-red-950/20 text-red-400 hover:bg-red-950/40'
+                    : 'border-yellow-500/50 bg-yellow-950/40 hover:bg-yellow-900/60 text-yellow-300 shadow-[0_0_12px_rgba(234,179,8,0.2)]'
+                }`}
+                title={isInsidePSR ? 'Zero solar flux inside PSR' : 'Rest on sunlit rim to recharge batteries and normalize temperature'}
+              >
+                <Sun className={`w-4 h-4 ${isInsidePSR ? 'text-red-400' : 'text-yellow-400'}`} />
+                <span className="font-bold">WAIT FOR SUN / SOLAR RECHARGE</span>
               </button>
             </div>
 
