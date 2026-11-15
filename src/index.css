@@ -28,14 +28,14 @@
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #0284c7;
+  background: #00f0ff;
 }
 
 /* Mission Control HUD elements */
 .hud-panel {
-  background: linear-gradient(135deg, rgba(12, 18, 36, 0.85) 0%, rgba(7, 11, 24, 0.95) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  backdrop-filter: blur(12px);
+  background: linear-gradient(135deg, rgba(12, 18, 36, 0.88) 0%, rgba(7, 11, 24, 0.96) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  backdrop-filter: blur(14px);
   position: relative;
 }
 
@@ -85,6 +85,21 @@
   pointer-events: none;
 }
 
+/* Cyber card with high-tech outline */
+.hud-panel-interactive {
+  background: linear-gradient(135deg, rgba(10, 16, 32, 0.85) 0%, rgba(5, 9, 20, 0.95) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  backdrop-filter: blur(12px);
+  position: relative;
+  transition: all 0.25s ease-in-out;
+}
+
+.hud-panel-interactive:hover {
+  border-color: rgba(0, 240, 255, 0.45);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+  transform: translateY(-1px);
+}
+
 /* CRT Scanline overlay */
 .scanlines {
   background: linear-gradient(
@@ -100,23 +115,92 @@
   pointer-events: none;
 }
 
+/* Subtle engineering graph background */
+.bg-tech-grid {
+  background-image: 
+    linear-gradient(rgba(56, 189, 248, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
 /* Glow effects */
 .glow-cyan {
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.25);
+  box-shadow: 0 0 25px rgba(0, 240, 255, 0.28);
 }
 
 .glow-amber {
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.28);
 }
 
 .glow-red {
-  box-shadow: 0 0 25px rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.45);
 }
 
 .text-glow-cyan {
-  text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+  text-shadow: 0 0 12px rgba(0, 240, 255, 0.7);
 }
 
 .text-glow-amber {
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+  text-shadow: 0 0 12px rgba(245, 158, 11, 0.7);
+}
+
+.text-glow-white {
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+/* Aerospace button styles */
+.btn-primary {
+  background: linear-gradient(90deg, #06b6d4 0%, #3b82f6 100%);
+  color: #030712;
+  font-family: 'Chakra Petch', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border-radius: 0.5rem;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(90deg, #22d3ee 0%, #60a5fa 100%);
+  box-shadow: 0 0 28px rgba(0, 240, 255, 0.55);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #e2e8f0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(0, 240, 255, 0.6);
+  color: #38bdf8;
+}
+
+/* Aerospace Badges */
+.badge-pass {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #34d399;
+}
+
+.badge-warn {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+}
+
+.badge-alert {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #f87171;
 }
