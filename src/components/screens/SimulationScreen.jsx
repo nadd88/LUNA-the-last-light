@@ -21,7 +21,8 @@ import {
   ChevronUp, 
   ChevronDown,
   Layers,
-  Sparkles
+  Sparkles,
+  Eye
 } from 'lucide-react';
 import { 
   calculateSolarPower, 
@@ -35,6 +36,7 @@ import { EMERGENCY_EVENTS } from '../../data/eventsData';
 import { getSiteIceDeposits } from '../../data/landingSites';
 import { sound } from '../../utils/sound';
 import EmergencyModal from './EmergencyModal';
+import Lunar3DEnvironment from '../../visualization/Lunar3DEnvironment';
 
 export default function SimulationScreen({
   roverConfig,
@@ -44,10 +46,21 @@ export default function SimulationScreen({
 }) {
   const canvasRef = useRef(null);
 
+  // View Mode: 2D Tactical Map or 3D Horizon View
+  const [viewMode, setViewMode] = useState('2D'); // '2D' | '3D'
+
   // Simulation State
   const [roverPos, setRoverPos] = useState({ x: 300, y: 80 }); // y=80 is sunlight, y>220 is PSR
   const [roverHeading, setRoverHeading] = useState(90); // 90° = pointing down into PSR
   const [tracks, setTracks] = useState([]); // Wheel tracks in regolith
+  const [driveCommand, setDriveCommand] = useState({
+    forward: false,
+    reverse: false,
+    left: false,
+    right: false,
+    brake: false,
+    boost: false
+  });
 
   // Resource State
   const maxBatteryWh = roverConfig?.battery?.capacity || 2000;
@@ -252,54 +265,153 @@ export default function SimulationScreen({
     addLog(`Emergency Contingency Executed: ${choice.riskOutcome}`, 'warning');
   };
 
-  // Move Rover Action
-  const handleMove = (direction) => {
-    if (isMoving) return;
-    if (waypoint) setWaypoint(null); // Manual drive cancels autonomous waypoint navigation
+  const distSinceTrack = useRef(0);
+  const isMovingSoundRef = useRef(false);
 
-    sound.playDrive();
-    setIsMoving(true);
-    setTimeout(() => setIsMoving(false), 350);
+  // Synchronize 3D physical rover state back to React mission telemetry
+  const handleRoverUpdateFrom3D = useCallback((newPos, newHeading, moving, deltaDist) => {
+    setIsMoving(moving);
+    setRoverPos(newPos);
+    setRoverHeading(Math.round(newHeading));
 
-    const speedDist = speedMode === 'DASH' ? 24 : speedMode === 'CAUTIOUS' ? 10 : 16;
-    const rad = (roverHeading * Math.PI) / 180;
-
-    let dx = 0;
-    let dy = 0;
-
-    if (direction === 'forward') {
-      dx = Math.cos(rad) * speedDist;
-      dy = Math.sin(rad) * speedDist;
-    } else if (direction === 'reverse') {
-      dx = -Math.cos(rad) * speedDist;
-      dy = -Math.sin(rad) * speedDist;
+    // Play motor hum when starting movement
+    if (moving && !isMovingSoundRef.current) {
+      sound.playDrive();
+      isMovingSoundRef.current = true;
+    } else if (!moving) {
+      isMovingSoundRef.current = false;
     }
 
-    setRoverPos((prev) => {
-      const nextX = Math.max(40, Math.min(560, prev.x + dx));
-      const nextY = Math.max(60, Math.min(560, prev.y + dy));
-
-      // Record tracks
-      setTracks((tr) => [...tr.slice(-50), { x: nextX, y: nextY }]);
-
-      // Calculate depth into PSR (starts at y=230)
-      const currentDepth = Math.max(0, Math.round((nextY - 230) * 1.5));
+    if (deltaDist > 0) {
+      // Depth into PSR (starts at y=230)
+      const currentDepth = Math.max(0, Math.round((newPos.y - 230) * 1.5));
       setDepthInPSR(currentDepth);
       setMaxDepthExplored((m) => Math.max(m, currentDepth));
 
-      return { x: nextX, y: nextY };
-    });
+      // Battery consumption proportional to distance traveled
+      const moveCost = (speedMode === 'DASH' ? 0.35 : speedMode === 'CAUTIOUS' ? 0.18 : 0.25) * deltaDist;
+      setBatteryWh((b) => Math.max(0, b - moveCost));
 
-    // Small battery drain for locomotion
-    const moveCost = speedMode === 'DASH' ? 12 : 7;
-    setBatteryWh((b) => Math.max(0, b - moveCost));
+      // Breadcrumb tracks
+      distSinceTrack.current += deltaDist;
+      if (distSinceTrack.current >= 6.0) {
+        setTracks((tr) => [...tr.slice(-60), { x: Math.round(newPos.x), y: Math.round(newPos.y) }]);
+        distSinceTrack.current = 0;
+      }
+    }
+  }, [speedMode]);
+
+  // 2D Tactical Mode Kinematic Movement Loop
+  const kinematic2D = useRef({ velocity: 0, heading: 90 });
+  useEffect(() => {
+    kinematic2D.current.heading = roverHeading;
+  }, []);
+
+  useEffect(() => {
+    if (viewMode !== '2D') return;
+
+    let animId;
+    let lastTime = performance.now();
+
+    const loop2D = (time) => {
+      const delta = Math.min(0.064, (time - lastTime) / 1000);
+      lastTime = time;
+
+      const fwd = driveCommand.forward;
+      const rev = driveCommand.reverse;
+      const left = driveCommand.left;
+      const right = driveCommand.right;
+      const brake = driveCommand.brake;
+      const boost = driveCommand.boost || speedMode === 'DASH';
+
+      const maxSpeed = boost ? 42 : speedMode === 'CAUTIOUS' ? 18 : 28;
+      const maxRev = -16;
+
+      let v = kinematic2D.current.velocity;
+
+      if (brake) {
+        v = v > 0 ? Math.max(0, v - 75 * delta) : Math.min(0, v + 75 * delta);
+      } else if (fwd && !rev) {
+        v = Math.min(maxSpeed, v + 22 * delta);
+      } else if (rev && !fwd) {
+        if (v > 2) v = Math.max(0, v - 45 * delta);
+        else v = Math.max(maxRev, v - 16 * delta);
+      } else {
+        v = v > 0 ? Math.max(0, v - 24 * delta) : Math.min(0, v + 24 * delta);
+      }
+      kinematic2D.current.velocity = v;
+
+      // Turning rate depends on speed
+      if (left && !right) {
+        const turnRate = Math.abs(v) > 2 ? 65 : 35;
+        kinematic2D.current.heading = (kinematic2D.current.heading - turnRate * delta + 360) % 360;
+      } else if (right && !left) {
+        const turnRate = Math.abs(v) > 2 ? 65 : 35;
+        kinematic2D.current.heading = (kinematic2D.current.heading + turnRate * delta) % 360;
+      }
+
+      const isMoving2D = Math.abs(v) > 0.5;
+      setIsMoving(isMoving2D);
+
+      if (isMoving2D) {
+        const rad = (kinematic2D.current.heading * Math.PI) / 180;
+        const ds = v * delta;
+        const dx = Math.cos(rad) * ds;
+        const dy = Math.sin(rad) * ds;
+
+        setRoverPos((prev) => {
+          const nextX = Math.max(40, Math.min(560, prev.x + dx));
+          const nextY = Math.max(60, Math.min(560, prev.y + dy));
+
+          const currentDepth = Math.max(0, Math.round((nextY - 230) * 1.5));
+          setDepthInPSR(currentDepth);
+          setMaxDepthExplored((m) => Math.max(m, currentDepth));
+
+          distSinceTrack.current += Math.abs(ds);
+          if (distSinceTrack.current >= 8.0) {
+            setTracks((tr) => [...tr.slice(-60), { x: Math.round(nextX), y: Math.round(nextY) }]);
+            distSinceTrack.current = 0;
+          }
+
+          return { x: nextX, y: nextY };
+        });
+
+        setRoverHeading(Math.round(kinematic2D.current.heading));
+        const drain = (speedMode === 'DASH' ? 0.35 : 0.22) * Math.abs(ds);
+        setBatteryWh((b) => Math.max(0, b - drain));
+      }
+
+      animId = requestAnimationFrame(loop2D);
+    };
+
+    animId = requestAnimationFrame(loop2D);
+    return () => cancelAnimationFrame(animId);
+  }, [viewMode, driveCommand, speedMode]);
+
+  // Move Rover Action (for button single click taps)
+  const handleMove = (direction) => {
+    if (waypoint) setWaypoint(null); // Manual drive cancels autonomous waypoint navigation
+    sound.playDrive();
+    if (direction === 'forward') {
+      setDriveCommand((p) => ({ ...p, forward: true }));
+      setTimeout(() => setDriveCommand((p) => ({ ...p, forward: false })), 420);
+    } else if (direction === 'reverse') {
+      setDriveCommand((p) => ({ ...p, reverse: true }));
+      setTimeout(() => setDriveCommand((p) => ({ ...p, reverse: false })), 420);
+    }
   };
 
-  // Turn Rover
+  // Turn Rover Action (for button single click taps)
   const handleTurn = (deltaDeg) => {
     if (waypoint) setWaypoint(null); // Manual steer cancels autonomous waypoint navigation
     sound.playBeep(700, 0.04);
-    setRoverHeading((h) => (h + deltaDeg + 360) % 360);
+    if (deltaDeg < 0) {
+      setDriveCommand((p) => ({ ...p, left: true }));
+      setTimeout(() => setDriveCommand((p) => ({ ...p, left: false })), 350);
+    } else {
+      setDriveCommand((p) => ({ ...p, right: true }));
+      setTimeout(() => setDriveCommand((p) => ({ ...p, right: false })), 350);
+    }
   };
 
   // Canvas Click-to-Move Waypoint Handler
@@ -558,6 +670,86 @@ export default function SimulationScreen({
     }, 1400);
   };
 
+  // Unified Continuous Keyboard Driving: WASD, Arrow Keys, Space (Brake/Scan), Shift (Boost), E/R (Drill), V (Toggle View)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Do not capture keyboard when typing in inputs or when emergency modal is open
+      if (activeEmergency) return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+      const code = e.code;
+      const key = e.key;
+
+      if (code === 'KeyW' || code === 'ArrowUp') {
+        e.preventDefault();
+        setDriveCommand((p) => ({ ...p, forward: true }));
+      } else if (code === 'KeyS' || code === 'ArrowDown') {
+        e.preventDefault();
+        setDriveCommand((p) => ({ ...p, reverse: true }));
+      } else if (code === 'KeyA' || code === 'ArrowLeft') {
+        e.preventDefault();
+        setDriveCommand((p) => ({ ...p, left: true }));
+      } else if (code === 'KeyD' || code === 'ArrowRight') {
+        e.preventDefault();
+        setDriveCommand((p) => ({ ...p, right: true }));
+      } else if (code === 'Space') {
+        e.preventDefault();
+        if (isMoving) {
+          // If moving: apply emergency mechanical brake
+          setDriveCommand((p) => ({ ...p, brake: true }));
+        } else if (!isScanning && !isDrilling) {
+          // If stationary: trigger regolith scientific scan
+          handleScan();
+        }
+      } else if (code === 'ShiftLeft' || code === 'ShiftRight') {
+        setDriveCommand((p) => ({ ...p, boost: true }));
+      } else if (key === 'e' || key === 'E' || key === 'r' || key === 'R') {
+        e.preventDefault();
+        if (!isDrilling && !isScanning) handleDrill();
+      } else if (key === 'v' || key === 'V') {
+        e.preventDefault();
+        setViewMode((m) => (m === '2D' ? '3D' : '2D'));
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      const code = e.code;
+      if (code === 'KeyW' || code === 'ArrowUp') {
+        setDriveCommand((p) => ({ ...p, forward: false }));
+      } else if (code === 'KeyS' || code === 'ArrowDown') {
+        setDriveCommand((p) => ({ ...p, reverse: false }));
+      } else if (code === 'KeyA' || code === 'ArrowLeft') {
+        setDriveCommand((p) => ({ ...p, left: false }));
+      } else if (code === 'KeyD' || code === 'ArrowRight') {
+        setDriveCommand((p) => ({ ...p, right: false }));
+      } else if (code === 'Space') {
+        setDriveCommand((p) => ({ ...p, brake: false }));
+      } else if (code === 'ShiftLeft' || code === 'ShiftRight') {
+        setDriveCommand((p) => ({ ...p, boost: false }));
+      }
+    };
+
+    const handleBlur = () => {
+      setDriveCommand({
+        forward: false,
+        reverse: false,
+        left: false,
+        right: false,
+        brake: false,
+        boost: false
+      });
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [activeEmergency, isMoving, isScanning, isDrilling]);
+
   // Render Topographic Lunar Surface Map Canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -785,7 +977,7 @@ export default function SimulationScreen({
       ctx.fillText(`WAYPOINT [${distMeters}m]`, waypoint.x + 15, waypoint.y - 8);
       ctx.restore();
     }
-  }, [roverPos, roverHeading, tracks, isInsidePSR, waypoint, iceDeposits]);
+  }, [roverPos, roverHeading, tracks, isInsidePSR, waypoint, iceDeposits, viewMode]);
 
   // Complete Mission handler (return to base or conclude)
   const handleDeclareCompletion = () => {
@@ -876,45 +1068,106 @@ export default function SimulationScreen({
 
       {/* Main Simulation Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left: Interactive Canvas Map (7 Cols) */}
-        <div className="lg:col-span-7">
-          <div className="hud-panel p-2 rounded-lg border border-cyan-500/30 bg-space-950 relative overflow-hidden">
-            <div className="absolute top-3 left-3 z-10 bg-space-950/80 backdrop-blur border border-slate-700/80 px-2.5 py-1 rounded text-[11px] font-mono text-slate-300 flex items-center space-x-2">
-              <span className={`w-2 h-2 rounded-full ${isInsidePSR ? 'bg-red-500 animate-ping' : 'bg-cyan-400'}`} />
-              <span>ZONE: {isInsidePSR ? 'PERMANENTLY SHADOWED REGION (0.0 W)' : 'SUNLIT SUMMIT CREST'}</span>
+        {/* Left: Interactive Map / 3D Visualization (7 Cols) */}
+        <div className="lg:col-span-7 space-y-2">
+          {/* 2D / 3D Mode Toggle Header */}
+          <div className="flex items-center justify-between px-1">
+            <div className="text-xs font-mono text-cyan-400 font-bold flex items-center space-x-1.5">
+              <Compass className="w-3.5 h-3.5 text-cyan-400" />
+              <span>SURFACE EXPLORATION PERSPECTIVE</span>
             </div>
+            <div className="flex items-center space-x-1 bg-space-950 p-1 rounded-lg border border-slate-800">
+              <button
+                onClick={() => {
+                  sound.playBeep(750, 0.04);
+                  setViewMode('2D');
+                }}
+                className={`px-3 py-1 rounded font-mono text-xs flex items-center space-x-1.5 transition-all ${
+                  viewMode === '2D'
+                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(0,240,255,0.4)]'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Switch to 2D Tactical View (Key: V)"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>2D TACTICAL MAP</span>
+              </button>
 
-            <canvas
-              ref={canvasRef}
-              onClick={handleCanvasClick}
-              className="w-full h-auto aspect-square rounded border border-slate-800 bg-black cursor-crosshair"
-              title="Click anywhere on terrain to set waypoint autonomous navigation"
-            />
-
-            {waypoint && (
-              <div className="absolute top-3 right-3 z-10 bg-cyan-950/90 backdrop-blur border border-cyan-500/80 px-2.5 py-1 rounded text-[11px] font-mono text-cyan-300 flex items-center space-x-2 animate-pulse">
-                <Navigation className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                <span>WAYPOINT: [{waypoint.x}, {waypoint.y}]</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setWaypoint(null);
-                    sound.playBeep(450, 0.05);
-                  }}
-                  className="ml-1 text-slate-400 hover:text-white font-bold"
-                  title="Cancel Waypoint"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 px-2 py-1">
-              <span>Top: Sunlit Rim Crest (+88% Illum)</span>
-              <span className="text-cyan-400/90 font-bold">CLICK CANVAS FOR WAYPOINT NAV</span>
-              <span>Bottom: Cryogenic Cold Trap (-238°C)</span>
+              <button
+                onClick={() => {
+                  sound.playBeep(850, 0.05);
+                  setViewMode('3D');
+                }}
+                className={`px-3 py-1 rounded font-mono text-xs flex items-center space-x-1.5 transition-all ${
+                  viewMode === '3D'
+                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(0,240,255,0.4)]'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Switch to 3D Horizon View (Key: V)"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span className="flex items-center space-x-1">
+                  <span>3D HORIZON VIEW</span>
+                  <span className="text-[9px] opacity-75 font-mono">[V]</span>
+                </span>
+              </button>
             </div>
           </div>
+
+          {/* Active View Display: 3D Three.js Environment or 2D Tactical Canvas */}
+          {viewMode === '3D' ? (
+            <Lunar3DEnvironment
+              roverPos={roverPos}
+              roverHeading={roverHeading}
+              onRoverUpdate={handleRoverUpdateFrom3D}
+              driveCommand={driveCommand}
+              speedMode={speedMode}
+              isMoving={isMoving}
+              isDrilling={isDrilling}
+              isScanning={isScanning}
+              selectedSite={selectedSite}
+              iceDeposits={iceDepositsRef.current}
+              onFallbackTo2D={() => setViewMode('2D')}
+            />
+          ) : (
+            <div className="hud-panel p-2 rounded-lg border border-cyan-500/30 bg-space-950 relative overflow-hidden">
+              <div className="absolute top-3 left-3 z-10 bg-space-950/80 backdrop-blur border border-slate-700/80 px-2.5 py-1 rounded text-[11px] font-mono text-slate-300 flex items-center space-x-2">
+                <span className={`w-2 h-2 rounded-full ${isInsidePSR ? 'bg-red-500 animate-ping' : 'bg-cyan-400'}`} />
+                <span>ZONE: {isInsidePSR ? 'PERMANENTLY SHADOWED REGION (0.0 W)' : 'SUNLIT SUMMIT CREST'}</span>
+              </div>
+
+              {waypoint && (
+                <div className="absolute top-3 right-3 z-10 bg-cyan-950/90 backdrop-blur border border-cyan-500/80 px-2.5 py-1 rounded text-[11px] font-mono text-cyan-300 flex items-center space-x-2 animate-pulse">
+                  <Navigation className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+                  <span>WAYPOINT: [{waypoint.x}, {waypoint.y}]</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWaypoint(null);
+                      sound.playBeep(450, 0.05);
+                    }}
+                    className="ml-1 text-slate-400 hover:text-white font-bold"
+                    title="Cancel Waypoint"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              <canvas
+                ref={canvasRef}
+                onClick={handleCanvasClick}
+                className="w-full h-auto aspect-square rounded border border-slate-800 bg-black cursor-crosshair"
+                title="Click anywhere on terrain to set waypoint autonomous navigation"
+              />
+
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 px-2 py-1">
+                <span>Top: Sunlit Rim Crest (+88% Illum)</span>
+                <span className="text-cyan-400/90 font-bold">CLICK CANVAS FOR WAYPOINT NAV</span>
+                <span>Bottom: Cryogenic Cold Trap (-238°C)</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right: Flight Controls & Telemetry Terminal (5 Cols) */}
@@ -923,45 +1176,82 @@ export default function SimulationScreen({
           <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/90">
             <div className="text-xs font-mono text-cyan-400 font-bold mb-3 flex items-center justify-between">
               <span>ROVER DRIVE & ACTUATORS</span>
-              <span className="text-slate-400 text-[10px]">HEADING: {roverHeading}°</span>
+              <div className="flex items-center space-x-2">
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-space-950 border border-slate-700 text-slate-300">KEYS: W A S D / ARROWS</span>
+                <span className="text-slate-400 text-[10px]">HDG: {roverHeading}°</span>
+              </div>
             </div>
 
             {/* Directional Pad */}
             <div className="grid grid-cols-3 gap-2 max-w-[240px] mx-auto mb-3">
               <div />
               <button
+                onMouseDown={() => setDriveCommand((p) => ({ ...p, forward: true }))}
+                onMouseUp={() => setDriveCommand((p) => ({ ...p, forward: false }))}
+                onMouseLeave={() => setDriveCommand((p) => ({ ...p, forward: false }))}
+                onTouchStart={() => setDriveCommand((p) => ({ ...p, forward: true }))}
+                onTouchEnd={() => setDriveCommand((p) => ({ ...p, forward: false }))}
                 onClick={() => handleMove('forward')}
-                disabled={isMoving}
                 className="p-3 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-400/50 hover:border-cyan-300 text-cyan-300 flex flex-col items-center justify-center font-mono text-xs active:scale-95 transition-all shadow-[0_0_12px_rgba(0,240,255,0.2)]"
+                title="Forward Throttle (Hold or Key W/↑)"
               >
                 <ChevronUp className="w-5 h-5" />
-                <span className="text-[9px]">ADVANCE <span className="text-slate-400">[W/↑]</span></span>
+                <span className="text-[9px] flex items-center space-x-1">
+                  <span>ADVANCE</span>
+                  <span className="text-[8px] opacity-60">W/↑</span>
+                </span>
               </button>
               <div />
 
               <button
+                onMouseDown={() => setDriveCommand((p) => ({ ...p, left: true }))}
+                onMouseUp={() => setDriveCommand((p) => ({ ...p, left: false }))}
+                onMouseLeave={() => setDriveCommand((p) => ({ ...p, left: false }))}
+                onTouchStart={() => setDriveCommand((p) => ({ ...p, left: true }))}
+                onTouchEnd={() => setDriveCommand((p) => ({ ...p, left: false }))}
                 onClick={() => handleTurn(-30)}
                 className="p-3 rounded-lg bg-space-900 hover:bg-space-800 border border-slate-700 text-slate-200 flex flex-col items-center justify-center font-mono text-xs active:scale-95 transition-all"
+                title="Steer Left (Hold or Key A/←)"
               >
                 <RotateCcw className="w-4 h-4 text-cyan-400 mb-0.5" />
-                <span className="text-[9px]">-30° <span className="text-slate-400">[A/←]</span></span>
+                <span className="text-[9px] flex items-center space-x-1">
+                  <span>STEER L</span>
+                  <span className="text-[8px] opacity-60">A/←</span>
+                </span>
               </button>
 
               <button
+                onMouseDown={() => setDriveCommand((p) => ({ ...p, reverse: true }))}
+                onMouseUp={() => setDriveCommand((p) => ({ ...p, reverse: false }))}
+                onMouseLeave={() => setDriveCommand((p) => ({ ...p, reverse: false }))}
+                onTouchStart={() => setDriveCommand((p) => ({ ...p, reverse: true }))}
+                onTouchEnd={() => setDriveCommand((p) => ({ ...p, reverse: false }))}
                 onClick={() => handleMove('reverse')}
-                disabled={isMoving}
                 className="p-3 rounded-lg bg-space-900 hover:bg-space-800 border border-slate-700 text-slate-200 flex flex-col items-center justify-center font-mono text-xs active:scale-95 transition-all"
+                title="Reverse / Brake (Hold or Key S/↓)"
               >
                 <ChevronDown className="w-5 h-5" />
-                <span className="text-[9px]">RETREAT <span className="text-slate-400">[S/↓]</span></span>
+                <span className="text-[9px] flex items-center space-x-1">
+                  <span>RETREAT</span>
+                  <span className="text-[8px] opacity-60">S/↓</span>
+                </span>
               </button>
 
               <button
+                onMouseDown={() => setDriveCommand((p) => ({ ...p, right: true }))}
+                onMouseUp={() => setDriveCommand((p) => ({ ...p, right: false }))}
+                onMouseLeave={() => setDriveCommand((p) => ({ ...p, right: false }))}
+                onTouchStart={() => setDriveCommand((p) => ({ ...p, right: true }))}
+                onTouchEnd={() => setDriveCommand((p) => ({ ...p, right: false }))}
                 onClick={() => handleTurn(30)}
                 className="p-3 rounded-lg bg-space-900 hover:bg-space-800 border border-slate-700 text-slate-200 flex flex-col items-center justify-center font-mono text-xs active:scale-95 transition-all"
+                title="Steer Right (Hold or Key D/→)"
               >
                 <RotateCw className="w-4 h-4 text-cyan-400 mb-0.5" />
-                <span className="text-[9px]">+30° <span className="text-slate-400">[D/→]</span></span>
+                <span className="text-[9px] flex items-center space-x-1">
+                  <span>STEER R</span>
+                  <span className="text-[8px] opacity-60">D/→</span>
+                </span>
               </button>
             </div>
 
@@ -988,18 +1278,20 @@ export default function SimulationScreen({
                 onClick={handleScan}
                 disabled={isScanning || isDrilling}
                 className="p-2.5 rounded border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 font-mono text-xs flex items-center justify-center space-x-1.5 transition-all"
+                title="Keyboard: Spacebar"
               >
                 <Search className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-                <span>{isScanning ? 'SCANNING...' : 'SCAN REGOLITH'}</span>
+                <span>{isScanning ? 'SCANNING...' : 'SCAN REGOLITH [SPACE]'}</span>
               </button>
 
               <button
                 onClick={handleDrill}
                 disabled={isDrilling || isScanning}
                 className="p-2.5 rounded border border-amber-500/40 bg-amber-950/30 hover:bg-amber-900/50 text-amber-300 font-mono text-xs flex items-center justify-center space-x-1.5 transition-all"
+                title="Keyboard: E or R"
               >
                 <Crosshair className={`w-3.5 h-3.5 ${isDrilling ? 'animate-bounce' : ''}`} />
-                <span>{isDrilling ? 'DRILLING...' : 'TRIDENT DRILL'}</span>
+                <span>{isDrilling ? 'DRILLING...' : 'TRIDENT DRILL [E]'}</span>
               </button>
             </div>
 
