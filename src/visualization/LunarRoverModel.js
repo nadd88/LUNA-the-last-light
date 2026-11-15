@@ -601,6 +601,79 @@ export function buildLunarRover() {
   }
 
   // ------------------------------------------
+  // TRIDENT 1-METER CRYOGENIC PERCUSSIVE DRILL
+  // ------------------------------------------
+  const drillTowerGroup = new THREE.Group();
+  drillTowerGroup.name = 'TRIDENT_Drill_Tower';
+  drillTowerGroup.position.set(0.72, 0.25, 0.65);
+  bodyGroup.add(drillTowerGroup);
+
+  // Vertical structural guide tower frame
+  addBox(
+    drillTowerGroup,
+    'Drill_Tower_Frame',
+    [0.26, 1.45, 0.24],
+    [0, 0.65, 0],
+    darkMetalMat
+  );
+
+  // Guide rails
+  for (const rx of [-0.09, 0.09]) {
+    addCylinder(
+      drillTowerGroup,
+      `Drill_Rail_${rx > 0 ? 'R' : 'L'}`,
+      0.02,
+      1.4,
+      [rx, 0.65, 0.10],
+      titaniumMat
+    );
+  }
+
+  // Top motor gearbox
+  addBox(
+    drillTowerGroup,
+    'Drill_Gearbox_Top',
+    [0.32, 0.28, 0.30],
+    [0, 1.42, 0],
+    goldMat
+  );
+
+  // Active translating drill carriage & auger bit
+  const drillGroup = new THREE.Group();
+  drillGroup.name = 'TRIDENT_Drill_Carriage';
+  drillGroup.position.set(0, 0.5, 0.12);
+  drillTowerGroup.add(drillGroup);
+
+  // Percussive hammer head / motor
+  addCylinder(
+    drillGroup,
+    'Drill_Hammer_Motor',
+    0.08,
+    0.35,
+    [0, 0.15, 0],
+    goldMat
+  );
+
+  // Fluted 1-meter rotary drill bit (auger)
+  addCylinder(
+    drillGroup,
+    'Drill_Auger_Bit',
+    0.04,
+    1.15,
+    [0, -0.55, 0],
+    titaniumMat
+  );
+
+  // Tungsten carbide drill cutting tip
+  const drillTip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.045, 0.12, 16),
+    darkMetalMat
+  );
+  drillTip.rotation.x = Math.PI;
+  drillTip.position.set(0, -1.15, 0);
+  drillGroup.add(drillTip);
+
+  // ------------------------------------------
   // FINAL MODEL SETUP
   // ------------------------------------------
 
@@ -617,7 +690,7 @@ export function buildLunarRover() {
     wheels,
     wheelRims,
     wheelOffsets,
-    drillGroup: null,
+    drillGroup,
     solarGroup,
     headlights,
     suspensionGroup

@@ -76,3 +76,37 @@ export function clearMissionHistory() {
     localStorage.removeItem(STORAGE_KEYS.MISSION_HISTORY);
   } catch (e) {}
 }
+
+export function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    if (!raw) {
+      return {
+        isMuted: false,
+        soundVolume: 0.8,
+        reducedMotion: false,
+        scanlines: true,
+        starfieldDensity: 'high'
+      };
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    return {
+      isMuted: false,
+      soundVolume: 0.8,
+      reducedMotion: false,
+      scanlines: true,
+      starfieldDensity: 'high'
+    };
+  }
+}
+
+export function saveSettings(settings) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    return true;
+  } catch (e) {
+    console.error('Failed to save settings:', e);
+    return false;
+  }
+}

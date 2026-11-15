@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { 
   Award, 
@@ -11,17 +12,22 @@ import {
   Battery, 
   Compass, 
   TrendingUp, 
-  FileText,
-  Share2,
+  DollarSign,
+  Heart,
   Sparkles,
   ShieldCheck,
   Thermometer,
   Clock,
-  Heart
+  ArrowRight
 } from 'lucide-react';
 import { calculateMissionScore } from '../../utils/physics';
 import { archiveCompletedMission } from '../../utils/storage';
 import { sound } from '../../utils/sound';
+import { useGameMode } from '../../context/GameModeContext';
+import Button from '../common/Button';
+import Badge from '../common/Badge';
+import StageHeader from '../common/StageHeader';
+import Callout from '../common/Callout';
 
 export default function DebriefScreen({
   missionReport,
@@ -29,6 +35,7 @@ export default function DebriefScreen({
   selectedSite,
   onRestart
 }) {
+  const { isEngineerMode } = useGameMode();
   const [copied, setCopied] = useState(false);
 
   // Evaluate mission score
@@ -44,6 +51,9 @@ export default function DebriefScreen({
   });
 
   const isSuccess = missionReport?.missionOutcome !== 'LOST';
+  const iceKg = missionReport?.waterIceDetectedKg || 0;
+  const maxDepth = missionReport?.maxDepthInPSR || 0;
+  const isSafelyOnRim = missionReport?.isSafelyOnRim !== false && isSuccess;
 
   // Trigger celebration on success
   useEffect(() => {
@@ -57,7 +67,6 @@ export default function DebriefScreen({
       });
     }
 
-    // Archive to localStorage
     archiveCompletedMission({
       site: selectedSite,
       scoreResult,
@@ -93,8 +102,8 @@ export default function DebriefScreen({
 Site: ${selectedSite?.name || 'Lunar South Pole'}
 Outcome: ${missionReport?.missionOutcome}
 Final Score: ${scoreResult.score} [Grade: ${scoreResult.grade}]
-Water Ice Extracted: ${missionReport?.waterIceDetectedKg || 0} kg
-Deepest PSR Penetration: ${missionReport?.maxDepthInPSR || 0} meters
+Water Ice Extracted: ${iceKg} kg
+Deepest Crater Penetration: ${maxDepth} meters
 Scientific Points: ${missionReport?.scienceCollected || 0}
 Rover Health: ${missionReport?.roverHealth || 0}%
 Battery Remaining: ${missionReport?.batteryRemainingPercent || 0}%
@@ -105,195 +114,207 @@ Battery Remaining: ${missionReport?.batteryRemainingPercent || 0}%
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Plain language outcome headline
+  const outcomeHeadline = isSuccess
+    ? (isSafelyOnRim
+        ? `MISSION ACCOMPLISHED — Rover returned safely with ${iceKg} kg of water ice!`
+        : `MISSION SUCCEEDED — Science telemetry transmitted from dark zone (${iceKg} kg ice logged).`)
+    : `ROVER LOST — ${missionReport?.failureReason || 'Depleted power in crater floor.'}`;
+
+  // Plain language grade explanation
+  const gradeExplanation = isSuccess
+    ? (scoreResult.score >= 750
+        ? "Exemplary expedition! You discovered high-grade ice deposits and returned the rover intact to the sunny rim."
+        : "Good mission! You collected valuable polar science, though rover reserves were stretched close to limits.")
+    : "Your rover succumbed to the extreme polar cold trap. Study your power consumption and try again with a bigger battery.";
+
+  // What went well & what to improve sentences
+  const whatWentWell = iceKg > 0
+    ? `You successfully prospected and extracted ${iceKg} kg of cryogenic water ice essential for NASA's Artemis base.`
+    : `You mapped ${maxDepth} meters of lunar south-pole terrain and transmitted valuable regolith sensor telemetry.`;
+
+  const whatToImprove = !isSafelyOnRim || !isSuccess
+    ? "Drive back to the sunny rim before your battery drops below 30% to guarantee full vehicle recovery."
+    : (roverConfig?.totalCost > 140
+        ? "Try trimming hardware costs on your next build to maximize your budget efficiency bonus."
+        : "Equip the deep TRIDENT drill to extract richer volatile ice cores on your next expedition.");
+
   return (
     <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
-      {/* Top Banner */}
-      <div className={`hud-panel p-6 rounded-xl border mb-6 shadow-2xl ${
+      {/* Top Result Banner */}
+      <div className={`hud-panel p-6 rounded-2xl border mb-6 shadow-2xl ${
         isSuccess ? 'border-cyan-400 bg-space-900/90 shadow-[0_0_30px_rgba(0,240,255,0.2)]' : 'border-red-500 bg-red-950/40 shadow-[0_0_30px_rgba(239,68,68,0.2)]'
       }`}>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-700/60 pb-4 mb-4">
           <div className="flex items-center space-x-3.5">
-            <div className={`p-3 rounded-xl ${
+            <div className={`p-3 rounded-2xl ${
               isSuccess ? 'bg-cyan-950 border border-cyan-400 text-cyan-300' : 'bg-red-950 border border-red-500 text-red-400'
             }`}>
               {isSuccess ? <Award className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
             </div>
             <div>
-              <div className="text-[11px] font-mono text-cyan-400 tracking-wider">
-                NASA SPACE APPS 2026 // EXPEDITION POST-FLIGHT FORENSIC DEBRIEF
-              </div>
-              <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-100">
-                {missionReport?.missionOutcome === 'FULL_SUCCESS'
-                  ? 'MISSION ACCOMPLISHED: FULL RECOVERY & ICE DISCOVERY'
-                  : missionReport?.missionOutcome === 'PARTIAL_SUCCESS'
-                  ? 'MISSION SUCCEEDED: TELEMETRY OFF-LOADED PRIOR TO FREEZE'
-                  : 'MISSION LOST: ROVER STRANDED IN CRATER COLD TRAP'}
+              <Badge variant={isSuccess ? 'success' : 'danger'}>
+                {isSuccess ? 'EXPEDITION COMPLETE' : 'MISSION TERMINATED'}
+              </Badge>
+              <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-100 mt-1">
+                {outcomeHeadline}
               </h2>
             </div>
           </div>
 
-          <div className="text-right">
-            <div className="text-xs font-mono text-slate-400">OVERALL RATING</div>
-            <div className="font-display text-4xl font-bold text-cyan-300 drop-shadow-[0_0_15px_rgba(0,240,255,0.5)]">
-              {scoreResult.grade}
+          {/* Letter Grade */}
+          <div className="text-left sm:text-right bg-space-950 px-4 py-2 rounded-xl border border-slate-800">
+            <div className="text-[11px] font-mono text-slate-400">OVERALL RATING</div>
+            <div className="font-display text-3xl sm:text-4xl font-bold text-cyan-300">
+              {scoreResult.grade.split(' ')[0]}
             </div>
           </div>
         </div>
 
-        {/* Narrative Forensic Summary */}
-        <p className="text-sm text-slate-300 leading-relaxed mb-4">
-          {isSuccess
-            ? `Commander, your rover successfully negotiated the extreme lighting and thermal boundaries of ${selectedSite?.name || 'the landing site'}. By penetrating deep into the permanently shadowed region and managing limited battery reserves, you confirmed cryogenic volatile deposits essential for NASA's Artemis base.`
-            : `During the traverse down ${selectedSite?.name || 'the landing site'}, your rover succumbed to extreme polar conditions: ${missionReport?.failureReason || 'Thermal starvation in 38K darkness'}. However, the scientific telemetry transmitted before loss of signal provides vital data for future robotic attempts.`}
+        {/* Narrative Explanation */}
+        <p className="text-sm sm:text-base text-slate-200 leading-relaxed font-sans mb-3">
+          {gradeExplanation}
         </p>
       </div>
 
-      {/* Score Grid Breakdown */}
+      {/* 4 Clear Category Scores with Icons */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/70 text-center">
+        {/* Science Score */}
+        <div className="hud-panel p-4 rounded-xl border border-cyan-500/30 bg-space-900/70 text-center">
           <div className="flex items-center justify-center space-x-1 text-slate-400 font-mono text-xs mb-1">
             <Droplet className="w-4 h-4 text-cyan-400" />
-            <span>Water Ice Extracted</span>
+            <span>Science & Ice</span>
           </div>
           <div className="text-2xl font-mono font-bold text-cyan-300">
-            {missionReport?.waterIceDetectedKg || 0} kg
+            {scoreResult.breakdown.scienceScore + scoreResult.breakdown.iceScore}
           </div>
-          <div className="text-[10px] font-mono text-emerald-400 mt-1">
-            +{scoreResult.breakdown.iceScore} Score Pts
+          <div className="text-[11px] font-mono text-emerald-400 mt-1">
+            {iceKg} kg ice extracted
           </div>
         </div>
 
-        <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/70 text-center">
+        {/* Exploration Depth */}
+        <div className="hud-panel p-4 rounded-xl border border-cyan-500/30 bg-space-900/70 text-center">
           <div className="flex items-center justify-center space-x-1 text-slate-400 font-mono text-xs mb-1">
             <Compass className="w-4 h-4 text-blue-400" />
-            <span>Max PSR Depth</span>
+            <span>Dark Exploration</span>
           </div>
           <div className="text-2xl font-mono font-bold text-blue-300">
-            {missionReport?.maxDepthInPSR || 0} m
+            {scoreResult.breakdown.depthScore}
           </div>
-          <div className="text-[10px] font-mono text-cyan-400 mt-1">
-            +{scoreResult.breakdown.depthScore} Score Pts
+          <div className="text-[11px] font-mono text-cyan-400 mt-1">
+            {maxDepth} m into shadow
           </div>
         </div>
 
-        <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/70 text-center">
+        {/* Survival & Health */}
+        <div className="hud-panel p-4 rounded-xl border border-cyan-500/30 bg-space-900/70 text-center">
           <div className="flex items-center justify-center space-x-1 text-slate-400 font-mono text-xs mb-1">
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <span>Science Collected</span>
-          </div>
-          <div className="text-2xl font-mono font-bold text-emerald-300">
-            {missionReport?.scienceCollected || 0} pts
-          </div>
-          <div className="text-[10px] font-mono text-emerald-400 mt-1">
-            +{scoreResult.breakdown.scienceScore} Score Pts
-          </div>
-        </div>
-
-        <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/70 text-center">
-          <div className="flex items-center justify-center space-x-1 text-slate-400 font-mono text-xs mb-1">
-            <Award className="w-4 h-4 text-amber-400" />
-            <span>Total Mission Score</span>
-          </div>
-          <div className="text-2xl font-mono font-bold text-amber-300">
-            {scoreResult.score}
-          </div>
-          <div className="text-[10px] font-mono text-slate-400 mt-1">
-            Eff. Bonus: +{scoreResult.breakdown.efficiencyBonus}
-          </div>
-        </div>
-      </div>
-
-      {/* Secondary Telemetry Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <div className="p-3 rounded-lg bg-space-950/80 border border-slate-800 text-xs font-mono">
-          <div className="text-slate-400 flex items-center space-x-1 mb-1">
-            <Battery className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Residual Battery</span>
-          </div>
-          <div className="text-base font-bold text-cyan-300">
-            {missionReport?.batteryRemainingPercent || 0}%
-          </div>
-        </div>
-
-        <div className="p-3 rounded-lg bg-space-950/80 border border-slate-800 text-xs font-mono">
-          <div className="text-slate-400 flex items-center space-x-1 mb-1">
-            <Heart className="w-3.5 h-3.5 text-emerald-400" />
+            <Heart className="w-4 h-4 text-emerald-400" />
             <span>Rover Health</span>
           </div>
-          <div className="text-base font-bold text-emerald-300">
-            {missionReport?.roverHealth || 0}%
+          <div className="text-2xl font-mono font-bold text-emerald-300">
+            {scoreResult.breakdown.healthScore}
+          </div>
+          <div className="text-[11px] font-mono text-emerald-400 mt-1">
+            {missionReport?.roverHealth || 100}% integrity
           </div>
         </div>
 
-        <div className="p-3 rounded-lg bg-space-950/80 border border-slate-800 text-xs font-mono">
-          <div className="text-slate-400 flex items-center space-x-1 mb-1">
-            <Thermometer className="w-3.5 h-3.5 text-amber-400" />
-            <span>Final Core Temp</span>
+        {/* Budget Efficiency */}
+        <div className="hud-panel p-4 rounded-xl border border-cyan-500/30 bg-space-900/70 text-center">
+          <div className="flex items-center justify-center space-x-1 text-slate-400 font-mono text-xs mb-1">
+            <DollarSign className="w-4 h-4 text-amber-400" />
+            <span>Budget Savings</span>
           </div>
-          <div className="text-base font-bold text-amber-300">
-            {missionReport?.finalTemp || '-45.0'} °C
+          <div className="text-2xl font-mono font-bold text-amber-300">
+            +{scoreResult.breakdown.efficiencyBonus}
           </div>
-        </div>
-
-        <div className="p-3 rounded-lg bg-space-950/80 border border-slate-800 text-xs font-mono">
-          <div className="text-slate-400 flex items-center space-x-1 mb-1">
-            <Clock className="w-3.5 h-3.5 text-blue-400" />
-            <span>Surface Duration</span>
-          </div>
-          <div className="text-base font-bold text-blue-300">
-            {missionReport?.totalTraverseTicks ? `${missionReport.totalTraverseTicks * 2} min` : '42 min'}
+          <div className="text-[11px] font-mono text-slate-400 mt-1">
+            ${Math.max(0, 160 - (roverConfig?.totalCost || 120))}M unspent
           </div>
         </div>
       </div>
 
-      {/* Educational NASA Comparison Section */}
-      <div className="hud-panel p-5 rounded-lg border border-cyan-500/20 bg-space-900/80 mb-6">
-        <div className="text-xs font-mono text-cyan-400 font-bold mb-3 flex items-center space-x-2">
-          <Sparkles className="w-4 h-4 text-cyan-400" />
-          <span>EDUCATIONAL RETROSPECTIVE: HOW YOUR FLIGHT COMPARES TO NASA MISSIONS</span>
+      {/* What Went Well / What to Improve */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="hud-panel p-4 rounded-xl border border-emerald-500/30 bg-space-900/80">
+          <div className="flex items-center space-x-2 text-emerald-400 font-display font-bold text-sm mb-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>WHAT WENT WELL:</span>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
+            {whatWentWell}
+          </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono text-slate-300 leading-relaxed">
-          <div className="p-3.5 rounded bg-space-950 border border-slate-800">
-            <strong className="text-cyan-300 block mb-1">NASA VIPER Parallel:</strong>
-            NASA’s Volatiles Investigating Polar Exploration Rover (VIPER) was planned around the exact tactical trade-offs you faced: short solar-charging stints on high rims punctuated by daring traverses into pitch-black PSRs to drill for ice.
+
+        <div className="hud-panel p-4 rounded-xl border border-amber-500/30 bg-space-900/80">
+          <div className="flex items-center space-x-2 text-amber-400 font-display font-bold text-sm mb-2">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>HOW TO IMPROVE NEXT TIME:</span>
           </div>
-          <div className="p-3.5 rounded bg-space-950 border border-slate-800">
-            <strong className="text-amber-300 block mb-1">Thermal Survival Reality:</strong>
-            Real lunar rovers require Radioisotope Heater Units (RHUs) or phase-change heat capacitors. Without them, lunar night or cold traps cool systems below -180°C, causing catastrophic structural failure.
-          </div>
+          <p className="text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
+            {whatToImprove}
+          </p>
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800">
+      {/* Engineer Mode: NASA Technical Comparison & Point Formulas */}
+      {isEngineerMode && (
+        <div className="hud-panel p-5 rounded-xl border border-cyan-500/20 bg-space-950/90 mb-6">
+          <div className="text-xs font-mono text-cyan-400 font-bold mb-3 flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <span>ENGINEER MODE: NASA TELEMETRY MATH & MISSION BENCHMARKS</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono text-slate-300 leading-relaxed mb-3">
+            <div className="p-3 rounded bg-space-900 border border-slate-800">
+              <strong className="text-cyan-300 block mb-1">NASA VIPER Baseline:</strong>
+              VIPER plan budgeted 120-minute traverses into PSR cold traps with an 80% battery recharge margin on elevated rim ridges.
+            </div>
+            <div className="p-3 rounded bg-space-900 border border-slate-800">
+              <strong className="text-amber-300 block mb-1">Score Formula:</strong>
+              Score = (Science × 3.5) + (Ice_kg × 12) + (Depth_m × 0.8) + (Health × 1.5) + (Battery% × 1.2) + (Budget_Saved × 2.0).
+            </div>
+            <div className="p-3 rounded bg-space-900 border border-slate-800">
+              <strong className="text-blue-300 block mb-1">Residual Telemetry:</strong>
+              Final Core Temp: {missionReport?.coreTempC || -45}°C • Battery Left: {missionReport?.batteryRemainingPercent || 0}% • Comm Margin: nominal.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons (Play again is primary) */}
+      <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800">
         <div className="flex items-center space-x-3 w-full sm:w-auto">
-          <button
+          <Button
+            variant="secondary"
             onClick={handleDownloadJSON}
-            className="btn-secondary flex-1 sm:flex-none flex items-center justify-center space-x-1.5"
+            icon={<Download className="w-4 h-4 text-cyan-400" />}
           >
-            <Download className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Export Flight JSON</span>
-          </button>
+            Export Flight Log
+          </Button>
 
-          <button
+          <Button
+            variant="ghost"
             onClick={handleCopySummary}
-            className="btn-secondary flex-1 sm:flex-none flex items-center justify-center space-x-1.5"
+            icon={<Copy className="w-4 h-4 text-cyan-400" />}
           >
-            <Copy className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{copied ? 'Copied to Clipboard!' : 'Copy Telemetry Summary'}</span>
-          </button>
+            {copied ? 'Copied!' : 'Copy Summary'}
+          </Button>
         </div>
 
-        <button
+        <Button
+          variant="primary"
+          size="lg"
           onClick={() => {
             sound.playBeep(980, 0.1);
             onRestart();
           }}
-          className="btn-primary w-full sm:w-auto flex items-center justify-center space-x-2"
+          className="w-full sm:w-auto shadow-[0_0_20px_rgba(0,240,255,0.4)]"
+          icon={<RotateCcw className="w-4 h-4 text-slate-950" />}
         >
-          <RotateCcw className="w-4 h-4 text-slate-950" />
-          <span>RUN ANOTHER EXPEDITION</span>
-        </button>
+          <span>PLAY AGAIN</span>
+        </Button>
       </div>
     </div>
   );

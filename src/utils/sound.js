@@ -21,6 +21,15 @@ class MissionSoundEngine {
     return this.isMuted;
   }
 
+  setMuted(muted) {
+    this.isMuted = !!muted;
+    return this.isMuted;
+  }
+
+  setVolume(vol) {
+    this.masterVolume = Math.max(0, Math.min(1, vol));
+  }
+
   // Tactical click / telemetry blip
   playBeep(freq = 880, duration = 0.05, type = 'sine') {
     if (this.isMuted) return;

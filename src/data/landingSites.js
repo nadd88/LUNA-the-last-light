@@ -1,5 +1,23 @@
 // Real NASA Lunar South Pole Exploration Landing Sites
 // Data referenced from LOLA (Lunar Orbiter Laser Altimeter), LROC, and Diviner instruments
+//
+// SCIENTIFIC DATA PROVENANCE & RESOLUTION DISCLOSURE:
+// - Topography & Slope: Derived from NASA LRO LOLA Gridded Data Records (GDR) at 20-30m spatial resolution.
+// - Illumination & Thermal Profiles: Derived from LOLA illumination simulations (Mazarico et al., 2011)
+//   and Diviner Lunar Radiometer Experiment bolometric brightness temperatures (Paige et al., 2010).
+// - Ice Concentration & Distribution: Regional Water-Equivalent Hydrogen (WEH) is constrained by Lunar Prospector
+//   Neutron Spectrometer (LP-NS, ~45 km spatial footprint) and LRO LEND (~10 km collimated footprint).
+//   Because orbital neutron spectrometers cannot resolve meter-scale patches, discrete ice pockets modeled below
+//   are PROCEDURAL SIMULATIONS calibrated to Diviner subsurface thermal stability zones (<110 K at depth)
+//   and LCROSS Cabeus crater impact ground-truth (5.5 ± 1.4 wt% H2O).
+
+export const LANDING_SITES_PROVENANCE = {
+  topographyDataset: 'NASA LRO LOLA (Lunar Orbiter Laser Altimeter) DEM / GDR',
+  thermalDataset: 'NASA LRO Diviner Lunar Radiometer Experiment (GDR)',
+  illuminationModel: 'LOLA 20m polar digital elevation model sun-visibility simulations (Mazarico et al., 2011)',
+  volatilesDataset: 'LP-NS (Feldman et al., 2001) & LRO LEND (Mitrofanov et al., 2010)',
+  discreteDepositNotice: 'Point-by-point ice coordinates are procedural representations calibrated against orbital thermal thresholds (<110 K), not direct ground-truth detections.'
+};
 
 export const LANDING_SITES = [
   {
@@ -7,6 +25,7 @@ export const LANDING_SITES = [
     name: 'Shackleton Crater Connecting Ridge',
     coords: '89.9°S, 0.0°E',
     elevation: '+1,240 m',
+    geologicalContext: 'Impact crater rim ridge in South Pole-Aitken (SPA) basin margin. High relief with steep interior slopes (up to 32°) descending 4.2 km to the cryogenic floor.',
     peakIllumination: 88, // % of lunar cycle
     slopeHazard: 'Moderate (12°-18°)',
     psrDistance: 450, // meters to permanently shadowed floor
@@ -25,6 +44,8 @@ export const LANDING_SITES = [
     tacticalTip: 'High initial solar power on the rim, but steep slopes consume 30% more mobility power during descent.',
     iceDepositProfile: {
       description: 'Deep cryogenic deposits in Shackleton crater floor',
+      isSimulatedDistribution: true,
+      scientificBasis: 'Calibrated against Diviner interior temperature maps (40-60 K) and regional epithermal neutron suppression. Discrete pockets represent simulated sub-surface sampling points.',
       pockets: [
         { x: 260, y: 280, concentration: 5.2, depth: 0.25 },
         { x: 380, y: 340, concentration: 7.1, depth: 0.5 },
@@ -39,6 +60,7 @@ export const LANDING_SITES = [
     name: 'Malapert Mountain (Massif)',
     coords: '84.9°S, 12.9°E',
     elevation: '+5,000 m',
+    geologicalContext: 'Prominent peak of the South Pole-Aitken basin rim structure. Elevated 5 km above the surrounding terrain, providing persistent line-of-sight to Earth and high average solar illumination.',
     peakIllumination: 93,
     slopeHazard: 'Gentle to Moderate (6°-11°)',
     psrDistance: 920,
@@ -57,6 +79,8 @@ export const LANDING_SITES = [
     tacticalTip: 'Earth communication is virtually uninterrupted (+12 dB margin), but travel distance to the nearest cold trap is long.',
     iceDepositProfile: {
       description: 'Dispersed low-to-moderate deposits in peripheral shadowed valleys',
+      isSimulatedDistribution: true,
+      scientificBasis: 'Low regional epithermal neutron absorption on summit; peripheral shadowed alcoves show moderate thermal stability for buried volatiles.',
       pockets: [
         { x: 230, y: 360, concentration: 2.4, depth: 0.35 },
         { x: 370, y: 410, concentration: 3.1, depth: 0.6 },
@@ -70,6 +94,7 @@ export const LANDING_SITES = [
     name: 'De Gerlache - Shackleton Ridge',
     coords: '88.5°S, 68.7°W',
     elevation: '+1,850 m',
+    geologicalContext: 'Elevated inter-crater saddle morphology between Shackleton (21 km) and De Gerlache (32 km). Gentle topography and shallow slopes facilitate safe vehicular transit into multiple secondary PSRs.',
     peakIllumination: 82,
     slopeHazard: 'Low (4°-8°)',
     psrDistance: 320,
@@ -88,6 +113,8 @@ export const LANDING_SITES = [
     tacticalTip: 'Shortest distance to dense ice deposits. Gentle slopes minimize battery drain during entry and escape.',
     iceDepositProfile: {
       description: 'Abundant high-purity volatile deposits on shallow access ramps',
+      isSimulatedDistribution: true,
+      scientificBasis: 'High local hydrogen count modeled from LEND data, with Diviner subsurface equilibrium temperatures below 100 K at shallow depths (<0.5m).',
       pockets: [
         { x: 240, y: 255, concentration: 6.2, depth: 0.15 },
         { x: 360, y: 280, concentration: 7.8, depth: 0.3 },
@@ -103,6 +130,7 @@ export const LANDING_SITES = [
     name: 'Haworth Deep Depression',
     coords: '87.4°S, 5.2°W',
     elevation: '-2,100 m',
+    geologicalContext: 'Deep degraded complex crater interior. Rim-to-floor relief exceeds 3.5 km. Due to high crater walls, floor experiences extreme annual thermal minimums (~25-35 K), functioning as a primary super-cold trap.',
     peakIllumination: 68,
     slopeHazard: 'High (16°-24°)',
     psrDistance: 180,
@@ -121,6 +149,8 @@ export const LANDING_SITES = [
     tacticalTip: 'Extremely short battery recovery windows. Only robust thermal designs with high-capacity cells can survive here.',
     iceDepositProfile: {
       description: 'Primordial extreme volatile cold trap with deep high-grade ice pockets',
+      isSimulatedDistribution: true,
+      scientificBasis: 'Deepest and coldest thermal trap in the near-polar quadrant (<35 K). Strongest LP-NS epithermal neutron deficit, indicating high regional concentration of hydrogenous volatiles.',
       pockets: [
         { x: 280, y: 250, concentration: 11.2, depth: 0.2 },
         { x: 170, y: 300, concentration: 13.8, depth: 0.35 },
@@ -136,6 +166,7 @@ export const LANDING_SITES = [
     name: 'Faustini Crater Plateau',
     coords: '87.3°S, 77.0°E',
     elevation: '+890 m',
+    geologicalContext: 'Broad elevated crater rim plateau bordering Faustini Crater (39 km diameter). Intermediate topography with extensive regolith plains and rolling terrain.',
     peakIllumination: 84,
     slopeHazard: 'Low to Moderate (8°-12°)',
     psrDistance: 510,
@@ -154,6 +185,8 @@ export const LANDING_SITES = [
     tacticalTip: 'Balanced profile for generalist rovers. Safe staging with moderate traverse distance to the shadow line.',
     iceDepositProfile: {
       description: 'Stratified regolith ice layers across plateau cold trap floor',
+      isSimulatedDistribution: true,
+      scientificBasis: 'ShadowCam optical surveys indicate smooth regolith with low boulder frequency; Diviner data confirms sub-surface thermal stability at depths >0.3 m.',
       pockets: [
         { x: 250, y: 290, concentration: 4.5, depth: 0.3 },
         { x: 390, y: 340, concentration: 5.4, depth: 0.45 },
@@ -166,24 +199,33 @@ export const LANDING_SITES = [
 ];
 
 /**
- * Returns procedural, landing-site-specific ice deposits for the simulation
- * Clones template pockets so in-game actions (scan, drill) don't mutate static configurations
+ * Returns procedural, landing-site-specific ice deposits for the simulation.
+ * Clones template pockets so in-game actions (scan, drill) do not mutate static configurations.
+ * Handles null, undefined, site id strings, and malformed objects defensively.
+ *
+ * @param {Object|string|null} site - Landing site object or site ID string
+ * @returns {Array<Object>} Cloned array of deposit objects ready for simulation state
  */
 export function getSiteIceDeposits(site) {
   if (!site) return [];
-  const foundSite = LANDING_SITES.find((s) => s.id === site.id) || site;
-  if (foundSite.iceDepositProfile?.pockets) {
+
+  // Allow lookup by site ID string or site object
+  const siteId = typeof site === 'string' ? site : site.id;
+  const foundSite = LANDING_SITES.find((s) => s.id === siteId) || (typeof site === 'object' ? site : null);
+
+  if (foundSite && foundSite.iceDepositProfile && Array.isArray(foundSite.iceDepositProfile.pockets)) {
     return foundSite.iceDepositProfile.pockets.map((dep, idx) => ({
-      id: `${foundSite.id}-dep-${idx}`,
-      x: dep.x,
-      y: dep.y,
-      concentration: dep.concentration,
-      depth: dep.depth,
+      id: `${foundSite.id || 'site'}-dep-${idx}`,
+      x: Number.isFinite(dep.x) ? dep.x : 250,
+      y: Number.isFinite(dep.y) ? dep.y : 250,
+      concentration: Number.isFinite(dep.concentration) ? Math.max(0, dep.concentration) : 5.0,
+      depth: Number.isFinite(dep.depth) ? Math.max(0, dep.depth) : 0.5,
       scanned: false,
       drilled: false
     }));
   }
-  // Generic fallback
+
+  // Generic fallback if site is unknown or lacks pockets
   return [
     { id: 'dep-1', x: 260, y: 280, concentration: 4.8, depth: 0.2, scanned: false, drilled: false },
     { id: 'dep-2', x: 380, y: 340, concentration: 7.2, depth: 0.5, scanned: false, drilled: false },

@@ -2,7 +2,7 @@
 // Balances realistic aerospace trade-offs (Mass, Budget, Power, Thermal Resistance)
 
 export const MISSION_CONSTRAINTS = {
-  maxBudget: 160, // $160 Million USD
+  maxBudget: 210, // $210 Million USD (NASA Discovery-class envelope with baseline drill instrument suite)
   maxMass: 350,   // 350 kg maximum payload capacity
   minPowerMargin: 10, // Must have at least +10W net generation in sunlight
 };

@@ -1,21 +1,16 @@
 import React, { useState } from 'react';
 import { 
-  MapPin, 
   Sun, 
-  Mountain, 
   ArrowRight, 
-  Droplet, 
-  AlertTriangle, 
-  ShieldCheck, 
-  Compass, 
-  ChevronRight,
-  TrendingDown,
-  Thermometer,
-  Layers
+  Droplet
 } from 'lucide-react';
-import { ResponsiveContainer, AreaChart, Area, Line, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts';
 import { LANDING_SITES } from '../../data/landingSites';
 import { sound } from '../../utils/sound';
+import { useGameMode } from '../../context/GameModeContext';
+import Button from '../common/Button';
+import Badge from '../common/Badge';
+import StageHeader from '../common/StageHeader';
+import LunarSurface3D from '../../visualization/LunarSurface3D';
 
 export default function SiteSelectionScreen({
   selectedSiteId,
@@ -23,9 +18,48 @@ export default function SiteSelectionScreen({
   onProceed,
   onBack
 }) {
-  const [activeSiteId, setActiveSiteId] = useState(selectedSiteId || LANDING_SITES[0].id);
+  const { isEngineerMode } = useGameMode();
 
-  const activeSite = LANDING_SITES.find((s) => s.id === activeSiteId) || LANDING_SITES[0];
+  const SITE_PRESETS = {
+    'malapert-mountain': {
+      difficultyBadge: 'Easy',
+      badgeVariant: 'success',
+      tagline: 'Gentle slopes and long sunlight. Great for beginners.',
+      sunlightLevel: 93,
+      scienceReward: 'Moderate',
+      scienceRewardScore: 65,
+    },
+    'shackleton-ridge': {
+      difficultyBadge: 'Medium ⭐',
+      isRecommended: true,
+      badgeVariant: 'info',
+      tagline: 'Classic Artemis target. Good balance of sunlight and crater ice.',
+      sunlightLevel: 88,
+      scienceReward: 'High',
+      scienceRewardScore: 85,
+    },
+    'haworth-crater': {
+      difficultyBadge: 'Hard',
+      badgeVariant: 'danger',
+      tagline: 'Steep slopes and short sunlight windows. Extreme ice payoff.',
+      sunlightLevel: 68,
+      scienceReward: 'Extreme',
+      scienceRewardScore: 100,
+    }
+  };
+
+  const curatedSiteIds = ['malapert-mountain', 'shackleton-ridge', 'haworth-crater'];
+  const displayedSites = LANDING_SITES.filter(s => curatedSiteIds.includes(s.id));
+
+  const [activeSiteId, setActiveSiteId] = useState(() => {
+    if (selectedSiteId && displayedSites.some(s => s.id === selectedSiteId)) {
+      return selectedSiteId;
+    }
+    return 'shackleton-ridge';
+  });
+
+  const activeSite = LANDING_SITES.find((s) => s.id === activeSiteId) || displayedSites[1];
+  const activePreset = SITE_PRESETS[activeSite.id] || SITE_PRESETS['shackleton-ridge'];
 
   const handleSelectSite = (site) => {
     sound.playBeep(850, 0.05);
@@ -34,257 +68,193 @@ export default function SiteSelectionScreen({
   };
 
   return (
-    <div className="relative z-10 max-w-6xl mx-auto px-4 py-6">
-      {/* Page Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 pb-3 border-b border-cyan-500/20">
-        <div>
-          <div className="text-[11px] font-mono text-cyan-400 tracking-wider flex items-center space-x-1.5">
-            <Compass className="w-3.5 h-3.5 text-cyan-400" />
-            <span>STAGE 01 // ORBITAL TARGET RECONNAISSANCE</span>
-          </div>
-          <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-100 tracking-wide mt-1">
-            SELECT ARTEMIS CANDIDATE LANDING SITE
-          </h2>
-        </div>
-        <div className="text-xs font-mono text-slate-400 mt-2 sm:mt-0 flex items-center space-x-2">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-          <span>DATA SOURCE: <span className="text-cyan-300 font-bold">NASA LOLA & LROC NAC SURVEY</span></span>
-        </div>
-      </div>
+    <div className="h-full w-full flex flex-col justify-between max-w-6xl mx-auto px-4 py-2 select-none">
+      {/* 1. StageHeader */}
+      <StageHeader
+        stepNumber={2}
+        totalSteps={6}
+        title="Choose Your Landing Site"
+        goal="Each crater rim offers different sunlight, terrain slopes, and ice deposits."
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
-        {/* Left Column: Interactive Site Selector List (5 Cols) */}
-        <div className="lg:col-span-5 space-y-3">
-          <div className="text-xs font-mono text-slate-400 mb-1 flex items-center justify-between">
-            <span className="flex items-center space-x-1.5">
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>CANDIDATE POLAR LOCATIONS</span>
-            </span>
-            <span className="text-cyan-400 font-bold">{LANDING_SITES.length} SITES SURVEYED</span>
-          </div>
-
-          {LANDING_SITES.map((site) => {
+      {/* 2. Main Content Grid (No page scroll) */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 overflow-hidden my-auto items-stretch">
+        {/* Left Column: 3 Curated Site Cards Stacked (5 Cols) */}
+        <div className="lg:col-span-5 flex flex-col justify-between gap-2 min-h-0 overflow-y-auto pr-1">
+          {displayedSites.map((site) => {
             const isSelected = site.id === activeSiteId;
+            const preset = SITE_PRESETS[site.id] || SITE_PRESETS['shackleton-ridge'];
+
             return (
-              <button
+              <div
                 key={site.id}
                 onClick={() => handleSelectSite(site)}
-                className={`w-full text-left p-3.5 rounded-lg border transition-all relative overflow-hidden group ${
+                className={`p-3 rounded-xl border transition-all cursor-pointer flex-1 flex flex-col justify-between ${
                   isSelected
-                    ? 'bg-cyan-950/50 border-cyan-400 shadow-[0_0_20px_rgba(0,240,255,0.22)] text-slate-100'
+                    ? 'bg-cyan-950/60 border-cyan-400 shadow-[0_0_16px_rgba(0,240,255,0.2)] text-slate-100 ring-2 ring-cyan-400/40'
                     : 'bg-space-900/60 border-slate-700/60 hover:border-cyan-500/40 hover:bg-space-800/80 text-slate-300'
                 }`}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleSelectSite(site);
+                  }
+                }}
               >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className={`w-2 h-2 rounded-full transition-all ${isSelected ? 'bg-cyan-400 shadow-[0_0_8px_#00f0ff]' : 'bg-slate-600'}`} />
-                      <span className="font-display font-bold text-sm tracking-wide text-slate-100 group-hover:text-cyan-300 transition-colors">
-                        {site.name}
+                {/* Header: Name + Badge */}
+                <div className="flex items-center justify-between gap-1 mb-1">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <span className={`w-2.5 h-2.5 rounded-full transition-all shrink-0 ${
+                      isSelected ? 'bg-cyan-400 shadow-[0_0_8px_#00f0ff]' : 'bg-slate-600'
+                    }`} />
+                    <span className="font-display font-bold text-sm text-slate-100 truncate">
+                      {site.name}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-1 shrink-0">
+                    {preset.isRecommended && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-semibold">
+                        Recommended
                       </span>
-                    </div>
-                    <div className="text-[11px] font-mono text-slate-400 mt-0.5 ml-4">
-                      {site.coords} • <span className="text-cyan-400">{site.elevation}</span>
-                    </div>
-                  </div>
-
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-bold ${
-                    site.difficulty === 'Challenging'
-                      ? 'border-amber-500/50 text-amber-300 bg-amber-950/40'
-                      : site.difficulty === 'Extreme'
-                      ? 'border-red-500/50 text-red-300 bg-red-950/40'
-                      : 'border-cyan-500/50 text-cyan-300 bg-cyan-950/40'
-                  }`}>
-                    {site.difficulty}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 mt-3 pt-2.5 border-t border-slate-700/40 text-[10px] font-mono ml-4">
-                  <div>
-                    <span className="text-slate-400 block">Peak Sun</span>
-                    <span className="text-cyan-300 font-bold">{site.peakIllumination}%</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">PSR Proximity</span>
-                    <span className="text-slate-200 font-bold">{site.psrDistance}m</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">Ice Yield Est</span>
-                    <span className="text-emerald-400 font-bold">{site.estimatedIceConcentration.split(' ')[0]}</span>
+                    )}
+                    <Badge variant={preset.badgeVariant}>
+                      {preset.difficultyBadge}
+                    </Badge>
                   </div>
                 </div>
 
-                {isSelected && (
-                  <div className="absolute right-2 bottom-2 text-cyan-400">
-                    <ChevronRight className="w-4 h-4 animate-pulse" />
+                {/* Tagline */}
+                <p className="text-sm text-slate-300 mb-2 pl-4 leading-snug font-sans">
+                  {preset.tagline}
+                </p>
+
+                {/* 2 Meters */}
+                <div className="space-y-1.5 pl-4 pt-1.5 border-t border-slate-700/40 text-xs font-mono">
+                  {/* Sunlight */}
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center space-x-1 text-slate-300">
+                      <Sun className="w-3 h-3 text-cyan-400 shrink-0" />
+                      <span>Sunlight:</span>
+                    </span>
+                    <span className="font-bold text-cyan-300">{preset.sunlightLevel}%</span>
+                  </div>
+                  <div className="w-full bg-space-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                    <div 
+                      className="h-full bg-cyan-400 rounded-full"
+                      style={{ width: `${preset.sunlightLevel}%` }}
+                    />
+                  </div>
+
+                  {/* Science Reward */}
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="flex items-center space-x-1 text-slate-300">
+                      <Droplet className="w-3 h-3 text-emerald-400 shrink-0" />
+                      <span>Science Reward:</span>
+                    </span>
+                    <span className="font-bold text-emerald-300">{preset.scienceReward}</span>
+                  </div>
+                  <div className="w-full bg-space-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                    <div 
+                      className="h-full bg-emerald-400 rounded-full"
+                      style={{ width: `${preset.scienceRewardScore}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Raw coordinates ONLY in Engineer Mode */}
+                {isEngineerMode && (
+                  <div className="mt-2 pt-1.5 border-t border-slate-800 text-[10px] font-mono text-slate-400 pl-4 flex justify-between">
+                    <span>{site.coords}</span>
+                    <span>Elev: {site.elevation}</span>
+                    <span>Slope: {site.slopeHazard.split(' ')[0]}</span>
                   </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
 
-        {/* Right Column: Site Detail Dossier & LOLA Altimetry (7 Cols) */}
-        <div className="lg:col-span-7 space-y-4">
-          {/* Main Site Dossier Card */}
-          <div className="hud-panel p-5 rounded-lg border border-cyan-500/30 bg-space-900/80 shadow-[0_0_20px_rgba(0,240,255,0.1)]">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-700/60 pb-3 mb-4 gap-2">
-              <div>
-                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 uppercase tracking-wider font-bold">
-                  {activeSite.badge}
+        {/* Right Column: Site Detail & Cross-Section Chart (7 Cols) */}
+        <div className="lg:col-span-7 flex flex-col gap-3 min-h-0 hud-panel p-3.5 rounded-xl border border-cyan-500/30 bg-space-900/80 overflow-hidden">
+          {/* (a) Site Title + Difficulty Badge Row */}
+          <div className="flex items-center justify-between border-b border-slate-700/60 pb-2 shrink-0">
+            <div className="flex items-center space-x-2">
+              <h3 className="font-display text-base font-bold text-slate-100">
+                {activeSite.name}
+              </h3>
+              {activePreset.isRecommended && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-semibold">
+                  Recommended
                 </span>
-                <h3 className="font-display text-xl font-bold text-slate-100 mt-1.5">
-                  {activeSite.name}
-                </h3>
-              </div>
-              <div className="text-left sm:text-right font-mono text-xs text-slate-400">
-                <div>COORD: <span className="text-cyan-300 font-bold">{activeSite.coords}</span></div>
-                <div>BASE ALT: <span className="text-slate-200 font-bold">{activeSite.elevation}</span></div>
-              </div>
+              )}
+              <Badge variant={activePreset.badgeVariant}>
+                {activePreset.difficultyBadge}
+              </Badge>
             </div>
-
-            <p className="text-xs text-slate-300 leading-relaxed mb-4">
-              {activeSite.description}
-            </p>
-
-            {/* Tactical Grid Metrics */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-              <div className="p-2.5 rounded bg-space-950/80 border border-slate-800">
-                <div className="flex items-center space-x-1 text-[10px] font-mono text-slate-400 mb-1">
-                  <Sun className="w-3 h-3 text-cyan-400" />
-                  <span>Sunlight Avail</span>
-                </div>
-                <div className="text-sm font-mono font-bold text-cyan-300">
-                  {activeSite.peakIllumination}%
-                </div>
+            {isEngineerMode && (
+              <div className="font-mono text-xs text-cyan-300 font-bold">
+                {activeSite.coords}
               </div>
+            )}
+          </div>
 
-              <div className="p-2.5 rounded bg-space-950/80 border border-slate-800">
-                <div className="flex items-center space-x-1 text-[10px] font-mono text-slate-400 mb-1">
-                  <Mountain className="w-3 h-3 text-amber-400" />
-                  <span>Slope Hazard</span>
-                </div>
-                <div className="text-xs font-mono font-bold text-slate-200 truncate" title={activeSite.slopeHazard}>
-                  {activeSite.slopeHazard.split(' ')[0]}
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded bg-space-950/80 border border-slate-800">
-                <div className="flex items-center space-x-1 text-[10px] font-mono text-slate-400 mb-1">
-                  <TrendingDown className="w-3 h-3 text-blue-400" />
-                  <span>Distance to PSR</span>
-                </div>
-                <div className="text-sm font-mono font-bold text-blue-300">
-                  {activeSite.psrDistance} m
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded bg-space-950/80 border border-slate-800">
-                <div className="flex items-center space-x-1 text-[10px] font-mono text-slate-400 mb-1">
-                  <Droplet className="w-3 h-3 text-emerald-400" />
-                  <span>Ice Yield Est</span>
-                </div>
-                <div className="text-xs font-mono font-bold text-emerald-300 truncate" title={activeSite.estimatedIceConcentration}>
-                  {activeSite.estimatedIceConcentration.split(' ')[0]}
-                </div>
-              </div>
+          {/* (b) 4 Mini Stat Cards */}
+          <div className="grid grid-cols-4 gap-2 text-xs font-mono shrink-0">
+            <div className="px-2 py-1.5 rounded-lg bg-space-950/80 border border-slate-800 text-center">
+              <div className="text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">SUNLIGHT</div>
+              <div className="text-sm font-bold text-cyan-300">{activeSite.peakIllumination}%</div>
             </div>
-
-            {/* Tactical Advice Box */}
-            <div className="p-3 rounded bg-cyan-950/30 border border-cyan-500/30 text-xs font-mono text-cyan-200 mb-4 flex items-start space-x-2">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 mt-1 flex-shrink-0 animate-pulse" />
-              <div>
-                <strong className="text-cyan-400">TACTICAL INTEL:</strong> {activeSite.tacticalTip}
-              </div>
+            <div className="px-2 py-1.5 rounded-lg bg-space-950/80 border border-slate-800 text-center">
+              <div className="text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">SLOPE</div>
+              <div className="text-sm font-bold text-amber-300 truncate">{activeSite.slopeHazard.split(' ')[0]}</div>
             </div>
-
-            {/* Altimetry Elevation Profile (Recharts) */}
-            <div className="mt-4 pt-3 border-t border-slate-700/50">
-              <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="w-2 h-2 rounded bg-cyan-400" />
-                  <span className="font-bold text-slate-300">LOLA Topographic Descent Cross-Section (Meters vs Descent)</span>
-                </div>
-                <span className="text-[10px] text-cyan-400">Sunlit Summit → Shadowed Cold Floor</span>
-              </div>
-
-              <div className="h-48 w-full bg-space-950/90 rounded border border-slate-800 p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={activeSite.elevationProfile}>
-                    <defs>
-                      <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#00f0ff" stopOpacity={0.35}/>
-                        <stop offset="95%" stopColor="#0284c7" stopOpacity={0.0}/>
-                      </linearGradient>
-                    </defs>
-                    <XAxis 
-                      dataKey="distance" 
-                      stroke="#64748b" 
-                      fontSize={10} 
-                      tickFormatter={(val) => `${val}m`}
-                    />
-                    <YAxis 
-                      stroke="#64748b" 
-                      fontSize={10} 
-                      tickFormatter={(val) => `${val}m`}
-                    />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#070b18', borderColor: '#00f0ff', fontSize: '11px', fontFamily: 'monospace' }}
-                      formatter={(val, name) => [
-                        name === 'elevation' ? `${val} m` : `${val}%`, 
-                        name === 'elevation' ? 'Elevation' : 'Illumination'
-                      ]}
-                      labelFormatter={(label) => `Traverse Distance: ${label}m`}
-                    />
-                    <ReferenceLine 
-                      x={activeSite.psrDistance} 
-                      stroke="#f59e0b" 
-                      strokeDasharray="3 3"
-                      label={{ value: 'PSR 0.0W CUTOFF', fill: '#f59e0b', fontSize: 9, position: 'top' }}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="elevation" 
-                      stroke="#00f0ff" 
-                      strokeWidth={2}
-                      fillOpacity={1} 
-                      fill="url(#elevGrad)" 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mt-2">
-                <span className="text-cyan-400">0m: Sunlit Summit Ridge</span>
-                <span className="text-amber-400">Dashed Line: {activeSite.psrDistance}m PSR Boundary (0.0W Solar Flux)</span>
-              </div>
+            <div className="px-2 py-1.5 rounded-lg bg-space-950/80 border border-slate-800 text-center">
+              <div className="text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">DARK ZONE</div>
+              <div className="text-sm font-bold text-blue-300">{activeSite.psrDistance}m</div>
+            </div>
+            <div className="px-2 py-1.5 rounded-lg bg-space-950/80 border border-slate-800 text-center">
+              <div className="text-slate-400 text-[10px] mb-0.5 uppercase tracking-wide">ICE YIELD</div>
+              <div className="text-sm font-bold text-emerald-300 truncate">{activeSite.estimatedIceConcentration.split(' ')[0]}</div>
             </div>
           </div>
+
+          {/* (c) Tactical Intel Tip (allows 2 lines wrapping, no truncate) */}
+          <p className="text-xs font-mono text-cyan-300 bg-cyan-950/40 px-2.5 py-1.5 rounded-lg border border-cyan-500/20 shrink-0 leading-snug break-words">
+            <strong className="text-cyan-200">MISSION TIP:</strong> {activeSite.tacticalTip}
+          </p>
+
+          {/* (d) 3D Lunar Surface Visualization (Takes all remaining vertical space) */}
+          <LunarSurface3D site={activeSite} isEngineerMode={isEngineerMode} className="flex-1 min-h-0" />
         </div>
       </div>
 
-      {/* Navigation Buttons */}
-      <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-        <button
+      {/* 3. Footer Action Bar (Fixed height) */}
+      <footer className="shrink-0 h-14 flex items-center justify-between border-t border-slate-800 pt-2 px-1">
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={() => {
             sound.playBeep(700, 0.05);
             onBack();
           }}
-          className="btn-secondary"
         >
           ← Back to Briefing
-        </button>
+        </Button>
 
-        <button
+        <Button
+          variant="primary"
+          size="md"
           onClick={() => {
             sound.playBeep(980, 0.08);
             onProceed(activeSite);
           }}
-          className="btn-primary flex items-center space-x-2"
+          iconRight={<ArrowRight className="w-4 h-4 text-slate-950" />}
         >
-          <span>CONFIRM SITE & CONFIGURE ROVER</span>
-          <ArrowRight className="w-4 h-4 text-slate-950" />
-        </button>
-      </div>
+          CONFIRM SITE & BUILD ROVER →
+        </Button>
+      </footer>
     </div>
   );
 }
