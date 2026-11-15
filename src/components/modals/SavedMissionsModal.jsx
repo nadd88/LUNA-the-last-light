@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, History, Trash2, Award, Droplet, Compass } from 'lucide-react';
 import { getMissionHistory, clearMissionHistory } from '../../utils/storage';
 import { sound } from '../../utils/sound';
+import { modalBackdropVariants, modalContentVariants } from '../../utils/motionVariants';
 
 export default function SavedMissionsModal({ isOpen, onClose }) {
   const [history, setHistory] = useState([]);
@@ -23,8 +25,24 @@ export default function SavedMissionsModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <div className="relative max-w-3xl w-full max-h-[80vh] rounded-xl border border-cyan-500/40 bg-space-950 p-6 shadow-2xl flex flex-col overflow-hidden">
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <motion.div
+          variants={modalBackdropVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          onClick={onClose}
+          className="fixed inset-0"
+        />
+
+        <motion.div
+          variants={modalContentVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="relative max-w-3xl w-full max-h-[80vh] rounded-xl border border-cyan-500/40 bg-space-950 p-6 shadow-[0_0_50px_rgba(0,240,255,0.2)] flex flex-col overflow-hidden z-10"
+        >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-700/60 flex-shrink-0">
           <div className="flex items-center space-x-2">
@@ -105,12 +123,13 @@ export default function SavedMissionsModal({ isOpen, onClose }) {
               sound.playBeep(700, 0.04);
               onClose();
             }}
-            className="px-5 py-2 rounded bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-bold text-xs tracking-wider transition-colors"
+            className="btn-primary px-5 py-2 text-xs"
           >
             CLOSE
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
+    </AnimatePresence>
   );
 }

@@ -1,42 +1,59 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Compass, 
-  Sun, 
-  Battery, 
-  BatteryCharging, 
-  Thermometer, 
-  ThermometerSnowflake, 
-  Radio, 
-  Zap, 
-  Navigation, 
-  RotateCcw, 
-  RotateCw, 
-  Crosshair, 
-  Search, 
-  Flame, 
-  CheckCircle2, 
-  AlertTriangle, 
-  ShieldAlert, 
-  Award, 
-  ChevronUp, 
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  Compass,
+  Sun,
+  Battery,
+  BatteryCharging,
+  ThermometerSnowflake,
+  Radio,
+  Zap,
+  Navigation,
+  RotateCcw,
+  RotateCw,
+  Crosshair,
+  Search,
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  ChevronUp,
   ChevronDown,
   Layers,
   Sparkles,
-  Eye
+  Eye,
+  HelpCircle,
+  X,
+  Target,
+  Settings,
+  Flame,
+  Shield,
+  Volume2,
+  FileText
 } from 'lucide-react';
-import { 
-  calculateSolarPower, 
-  calculatePowerDraw, 
-  calculateThermalStep, 
-  calculateBatteryStep, 
-  calculateCommSignal, 
-  getThermalStatus 
+import {
+  calculateSolarPower,
+  calculatePowerDraw,
+  calculateThermalStep,
+  calculateBatteryStep,
+  calculateCommSignal,
+  calculateSolarRechargeStep,
+  getThermalStatus
 } from '../../utils/physics';
 import { EMERGENCY_EVENTS } from '../../data/eventsData';
 import { getSiteIceDeposits } from '../../data/landingSites';
 import { sound } from '../../utils/sound';
 import EmergencyModal from './EmergencyModal';
 import Lunar3DEnvironment from '../../visualization/Lunar3DEnvironment';
+import StatMeter from '../common/StatMeter';
+import Button from '../common/Button';
+import ConfirmDialog from '../common/ConfirmDialog';
+import Modal from '../common/Modal';
+import Toast from '../common/Toast';
+import Tooltip from '../common/Tooltip';
+import { useGameMode } from '../../context/GameModeContext';
+import { LABELS } from '../../content/labels';
+
+// Configuration flag: show the slim bottom-center action bar
+const SHOW_ACTION_BAR = true;
 
 export default function SimulationScreen({
   roverConfig,
@@ -44,15 +61,17 @@ export default function SimulationScreen({
   onCompleteMission,
   onUpdateTelemetry
 }) {
-  const canvasRef = useRef(null);
+  const { isEngineerMode } = useGameMode();
 
-  // View Mode: 2D Tactical Map or 3D Horizon View
-  const [viewMode, setViewMode] = useState('2D'); // '2D' | '3D'
+  // 3D Canvas / Horizon View
+  const [cameraMode, setCameraMode] = useState('ORBIT'); // 'ORBIT' | 'CHASE' | 'PANORAMA'
+  const [resetCameraTrigger, setResetCameraTrigger] = useState(0);
+  const [isRadarOpen, setIsRadarOpen] = useState(false);
 
-  // Simulation State
+  // Simulation Physical State
   const [roverPos, setRoverPos] = useState({ x: 300, y: 80 }); // y=80 is sunlight, y>220 is PSR
   const [roverHeading, setRoverHeading] = useState(90); // 90° = pointing down into PSR
-  const [tracks, setTracks] = useState([]); // Wheel tracks in regolith
+  const [tracks, setTracks] = useState([]);
   const [driveCommand, setDriveCommand] = useState({
     forward: false,
     reverse: false,
@@ -65,12 +84,12 @@ export default function SimulationScreen({
   // Resource State
   const maxBatteryWh = roverConfig?.battery?.capacity || 2000;
   const [batteryWh, setBatteryWh] = useState(maxBatteryWh);
-  const [coreTempC, setCoreTempC] = useState(-35); // Start at standard daytime avionics temp
+  const [coreTempC, setCoreTempC] = useState(-35);
   const [heaterMode, setHeaterMode] = useState('AUTO'); // 'OFF' | 'LOW' | 'HIGH' | 'AUTO'
   const [speedMode, setSpeedMode] = useState('NORMAL'); // 'CAUTIOUS' | 'NORMAL' | 'DASH'
 
   // Mission Metrics
-  const [depthInPSR, setDepthInPSR] = useState(0); // meters into darkness
+  const [depthInPSR, setDepthInPSR] = useState(0);
   const [maxDepthExplored, setMaxDepthExplored] = useState(0);
   const [sciencePoints, setSciencePoints] = useState(0);
   const [waterIceKg, setWaterIceKg] = useState(0);
@@ -78,23 +97,19 @@ export default function SimulationScreen({
   const [roverHealth, setRoverHealth] = useState(100);
   const [missionElapsedMinutes, setMissionElapsedMinutes] = useState(0);
 
-  // State flags & Activity
+  // Activity Flags
   const [isDrilling, setIsDrilling] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
-  const [logs, setLogs] = useState([
-    { id: 1, text: `Touchdown verified at ${selectedSite.name}. Subsystems nominal.`, type: 'info' },
-    { id: 2, text: 'Solar panels deployed. Sunlit rim baseline established.', type: 'info' }
-  ]);
 
-  // Emergency Event State
+  // Emergency & Contingency State
   const [activeEmergency, setActiveEmergency] = useState(null);
   const [triggeredEventKeys, setTriggeredEventKeys] = useState(new Set());
 
-  // Waypoint navigation state
-  const [waypoint, setWaypoint] = useState(null); // { x: number, y: number } | null
+  // Autonomous Waypoint State
+  const [waypoint, setWaypoint] = useState(null);
 
-  // Landing-site-specific procedural ice deposits in the PSR
+  // Ice Deposits
   const [iceDeposits, setIceDeposits] = useState(() => getSiteIceDeposits(selectedSite));
   const iceDepositsRef = useRef(iceDeposits);
 
@@ -104,17 +119,104 @@ export default function SimulationScreen({
     iceDepositsRef.current = deposits;
   }, [selectedSite]);
 
+  // Dialog & Modal States
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // How to Play modal auto-opens on first entry
+  const [isHowToPlayOpen, setIsHowToPlayOpen] = useState(() => {
+    return !localStorage.getItem('luna_howtoplay_seen');
+  });
+
+  const closeHowToPlay = () => {
+    localStorage.setItem('luna_howtoplay_seen', 'true');
+    setIsHowToPlayOpen(false);
+  };
+
+  // Toast Notification State
+  const [toast, setToast] = useState({ isOpen: false, message: '', variant: 'info' });
+  const showToast = useCallback((message, variant = 'info') => {
+    setToast({ isOpen: true, message, variant });
+  }, []);
+
+  // Responsive Touch Detection
+  const [isTouchDevice, setIsTouchDevice] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.matchMedia('(pointer: coarse)').matches;
+    }
+    return false;
+  });
+
+  // Quests Panel Collapsed State (default collapsed on touch devices)
+  const [isQuestsCollapsed, setIsQuestsCollapsed] = useState(isTouchDevice);
+
+  // Help hint banner fades after 10s
+  const [showControlsHint, setShowControlsHint] = useState(true);
+  useEffect(() => {
+    const timer = setTimeout(() => setShowControlsHint(false), 10000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Contextual Coach & Mission Log
+  const [logs, setLogs] = useState([
+    {
+      id: 1,
+      text: isEngineerMode
+        ? `Telemetry initialized at ${selectedSite.name}. Subsystems nominal.`
+        : `Touchdown verified at ${selectedSite.name}. All systems operational.`,
+      type: 'info',
+      time: 'T+0m'
+    }
+  ]);
+
   const addLog = useCallback((text, type = 'info') => {
     setLogs((prev) => [
-      { id: Date.now() + Math.random(), text, type, time: `T+${missionElapsedMinutes}m` },
-      ...prev.slice(0, 15)
+      ...prev,
+      { id: Date.now() + Math.random(), text, type, time: `T+${missionElapsedMinutes}m` }
     ]);
   }, [missionElapsedMinutes]);
 
-  // Illumination calculation based on Y position on map
-  // Y: 40 - 150 = Sunlit Ridge (80% - 95%)
-  // Y: 150 - 240 = Transition Penumbra (75% -> 5%)
-  // Y >= 240 = Permanently Shadowed Region (0.0% Solar Flux!)
+  // Event trigger trackers so coach messages fire at most once
+  const coachTriggersRef = useRef({
+    entryHint: false,
+    shadowLine: false,
+    batt50: false,
+    batt25: false,
+    batt15: false,
+    tempCold: false,
+    commLost: false,
+    firstIce: false,
+    idleHint: false
+  });
+
+  const lastUserActivity = useRef(Date.now());
+  const logContainerRef = useRef(null);
+
+  // Auto-scroll latest message in log
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  // Initial entry tip
+  useEffect(() => {
+    if (!coachTriggersRef.current.entryHint) {
+      coachTriggersRef.current.entryHint = true;
+      const timer = setTimeout(() => {
+        addLog(
+          isEngineerMode
+            ? 'NAV ADVISORY: Traverse south towards the 0.0 W solar flux PSR boundary line.'
+            : "💡 Tip: Drive south (S or ↓) toward the glowing line. That's the edge of the Dark Zone.",
+          'tip'
+        );
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [addLog, isEngineerMode]);
+
+  // Illumination & Thermal Physics
   const getIlluminationAtY = (y) => {
     if (y < 140) return selectedSite.peakIllumination;
     if (y < 230) {
@@ -127,19 +229,18 @@ export default function SimulationScreen({
   const currentIllumination = getIlluminationAtY(roverPos.y);
   const isInsidePSR = currentIllumination <= 0.001;
 
-  // Ambient temperature based on Y position
   const getAmbientTempAtY = (y) => {
-    if (y < 140) return -45; // ~228 Kelvin in sun
+    if (y < 140) return -45;
     if (y < 230) {
       const ratio = (y - 140) / 90;
       return Math.round(-45 + (-235 - (-45)) * ratio);
     }
-    return -238; // ~35 Kelvin in deep cold trap
+    return -238;
   };
 
   const currentAmbientTemp = getAmbientTempAtY(roverPos.y);
 
-  // Electrical physics
+  // Electrical Physics
   const solarGenWatts = calculateSolarPower(roverConfig.solar, currentIllumination);
   const powerDrawWatts = calculatePowerDraw(roverConfig, {
     isMoving,
@@ -148,13 +249,160 @@ export default function SimulationScreen({
     heaterState: heaterMode
   });
   const netPowerWatts = Math.round((solarGenWatts - powerDrawWatts) * 10) / 10;
-  const batteryPercent = Math.round((batteryWh / maxBatteryWh) * 100);
+  const batteryPercent = Math.max(0, Math.min(100, Math.round((batteryWh / maxBatteryWh) * 100)));
 
-  // Comm status
+  // Telecom & Thermal Status
   const commTelemetry = calculateCommSignal(roverConfig.comm, depthInPSR);
   const thermalStatus = getThermalStatus(coreTempC);
 
-  // Check game over
+  // Estimated minutes remaining on battery
+  const estimatedMinsLeft = useMemo(() => {
+    if (netPowerWatts >= 0) return 'Charging';
+    const drainRate = Math.max(10, Math.abs(netPowerWatts));
+    return `~${Math.max(1, Math.round((batteryWh / drainRate) * 60))} min left`;
+  }, [batteryWh, netPowerWatts]);
+
+  // Proximity to unscanned/undrilled ice deposit
+  const isNearIce = useMemo(() => {
+    return iceDeposits.some((dep) => {
+      const dist = Math.hypot(dep.x - roverPos.x, dep.y - roverPos.y);
+      return dist < 65 && !dep.drilled;
+    });
+  }, [iceDeposits, roverPos]);
+
+  // Quests State Derivation
+  const quest1Done = roverPos.y >= 230 || depthInPSR > 0;
+  const quest2Done = waterIceKg > 0 || iceDeposits.some((d) => d.scanned);
+  const quest3Done = drillCores >= 4;
+  const quest4Done = drillCores >= 1 && roverPos.y < 160;
+
+  // Active quest index (0-based)
+  const activeQuestIndex = useMemo(() => {
+    if (!quest1Done) return 0;
+    if (!quest2Done) return 1;
+    if (!quest3Done) return 2;
+    return 3;
+  }, [quest1Done, quest2Done, quest3Done]);
+
+  const completedQuestsCount = (quest1Done ? 1 : 0) + (quest2Done ? 1 : 0) + (quest3Done ? 1 : 0) + (quest4Done ? 1 : 0);
+
+  // Track Quest Completion Toasts & Coach Logs
+  const prevQuestsRef = useRef({ q1: false, q2: false, q3: false, q4: false });
+  useEffect(() => {
+    if (quest1Done && !prevQuestsRef.current.q1) {
+      prevQuestsRef.current.q1 = true;
+      showToast('🎯 Quest Complete: Reached the Dark Zone!', 'success');
+      addLog('🎯 QUEST COMPLETE: Crossed into the Dark Zone (0.0 W solar flux).', 'success');
+    }
+    if (quest2Done && !prevQuestsRef.current.q2) {
+      prevQuestsRef.current.q2 = true;
+      showToast('💎 Quest Complete: Located Water Ice Deposit!', 'success');
+      addLog('💎 QUEST COMPLETE: Ice deposit identified via ground scan.', 'success');
+    }
+    if (quest3Done && !prevQuestsRef.current.q3) {
+      prevQuestsRef.current.q3 = true;
+      showToast('⛏️ Quest Complete: Collected 4 Drill Cores!', 'success');
+      addLog('⛏️ QUEST COMPLETE: Harvested 4 cryogenic ice cores.', 'success');
+    }
+    if (quest4Done && !prevQuestsRef.current.q4) {
+      prevQuestsRef.current.q4 = true;
+      showToast('🏆 Quest Complete: Returned Safely to Sunny Ridge!', 'success');
+      addLog('🏆 QUEST COMPLETE: Rover safely positioned on sunlit ridge with all samples.', 'success');
+    }
+  }, [quest1Done, quest2Done, quest3Done, quest4Done, showToast, addLog]);
+
+  // Contextual Coach Event Watchers
+  useEffect(() => {
+    // 1. Crossing shadow line
+    if (isInsidePSR && !coachTriggersRef.current.shadowLine) {
+      coachTriggersRef.current.shadowLine = true;
+      addLog(
+        isEngineerMode
+          ? 'WARNING: Ingress to PSR complete. Solar flux = 0.0 W/m². Operating on internal battery.'
+          : "⚠️ You're in the Dark Zone. No solar power now. Your battery is all you have.",
+        'warning'
+      );
+    }
+
+    // 2. Battery 50%
+    if (batteryPercent <= 50 && batteryPercent > 25 && !coachTriggersRef.current.batt50) {
+      coachTriggersRef.current.batt50 = true;
+      addLog(
+        isEngineerMode
+          ? 'ENERGY ADVISORY: Battery SoC at 50%. Evaluate egress timeline.'
+          : '⚠️ Battery at 50%. Keep an eye on your energy reserve.',
+        'warning'
+      );
+    }
+
+    // 3. Battery 25%
+    if (batteryPercent <= 25 && batteryPercent > 15 && !coachTriggersRef.current.batt25) {
+      coachTriggersRef.current.batt25 = true;
+      addLog(
+        isEngineerMode
+          ? 'CRITICAL RESERVE: Battery SoC at 25%! Reduce heater power or commence rim egress.'
+          : '⚠️ Battery low (25%)! Consider heading back or turning down heaters.',
+        'danger'
+      );
+    }
+
+    // 4. Battery 15%
+    if (batteryPercent <= 15 && !coachTriggersRef.current.batt15) {
+      coachTriggersRef.current.batt15 = true;
+      sound.playAlarm();
+      addLog(
+        isEngineerMode
+          ? 'POWER EMERGENCY: Battery SoC <= 15%! Immediate abort to sunlit ridge required!'
+          : '🚨 CRITICAL BATTERY (15%)! Turn back to the sunny ridge immediately!',
+        'danger'
+      );
+    }
+
+    // 5. Temperature falling below -80°C
+    if (coreTempC <= -80 && !coachTriggersRef.current.tempCold) {
+      coachTriggersRef.current.tempCold = true;
+      sound.playWarning();
+      addLog(
+        isEngineerMode
+          ? 'THERMAL ALERT: Avionics core <= -80°C. Engage HIGH heater or return to sunlight.'
+          : '❄️ Freezing risk: avionics below -80°C! Keep heater active.',
+        'warning'
+      );
+    }
+
+    // 6. Comm loss
+    if (commTelemetry.marginDb <= 0 && !coachTriggersRef.current.commLost) {
+      coachTriggersRef.current.commLost = true;
+      addLog(
+        isEngineerMode
+          ? 'RF HORIZON OCCULTATION: Earth line-of-sight lost behind crater rim.'
+          : '📡 Signal to Earth is blocked by crater terrain. Ascend or find higher ground.',
+        'warning'
+      );
+    }
+  }, [isInsidePSR, batteryPercent, coreTempC, commTelemetry.marginDb, addLog, isEngineerMode]);
+
+  // Idle Coach: Trigger reminder after 15s of inactivity
+  useEffect(() => {
+    const idleCheck = setInterval(() => {
+      const idleMs = Date.now() - lastUserActivity.current;
+      if (idleMs >= 15000 && !coachTriggersRef.current.idleHint) {
+        coachTriggersRef.current.idleHint = true;
+        if (!quest1Done) {
+          addLog("💡 Tip: Press W or ↑ to drive south toward the dark crater.", 'tip');
+        } else if (!quest2Done) {
+          addLog("💡 Tip: Press Space to scan the ground for underground ice deposits.", 'tip');
+        } else if (!quest3Done) {
+          addLog("💡 Tip: Stop near a detected ice deposit and press E to drill a core.", 'tip');
+        } else if (!quest4Done) {
+          addLog("💡 Tip: Drive north back to the sunny ridge before your battery depletes.", 'tip');
+        }
+      }
+    }, 5000);
+    return () => clearInterval(idleCheck);
+  }, [quest1Done, quest2Done, quest3Done, quest4Done, addLog]);
+
+  // Game Over Conditions Check
   useEffect(() => {
     if (batteryWh <= 0) {
       sound.playAlarm();
@@ -187,22 +435,21 @@ export default function SimulationScreen({
         });
       }, 1800);
     }
-  }, [batteryWh, coreTempC]);
+  }, [batteryWh, coreTempC, sciencePoints, waterIceKg, maxDepthExplored, batteryPercent, onCompleteMission, addLog]);
 
-  // Main simulation clock tick (Runs every 2.5 seconds = 1 minute simulation time)
+  // Main Simulation Clock Tick (Runs every 2.5s = 1 simulation minute)
   useEffect(() => {
     const interval = setInterval(() => {
       setMissionElapsedMinutes((m) => m + 1);
 
       // Battery update
       setBatteryWh((prevWh) => {
-        const updated = calculateBatteryStep(prevWh, netPowerWatts, maxBatteryWh, 1/60);
-        return updated;
+        return calculateBatteryStep(prevWh, netPowerWatts, maxBatteryWh, 1 / 60);
       });
 
       // Thermal update
       setCoreTempC((prevTemp) => {
-        const updated = calculateThermalStep(
+        return calculateThermalStep(
           prevTemp,
           currentAmbientTemp,
           powerDrawWatts,
@@ -210,10 +457,8 @@ export default function SimulationScreen({
           heaterMode,
           1
         );
-        return updated;
       });
 
-      // Health degradation if operating in cryogenic extremes without sufficient heat
       if (coreTempC < -100) {
         setRoverHealth((h) => Math.max(15, h - 1));
       }
@@ -244,7 +489,7 @@ export default function SimulationScreen({
     return () => clearInterval(interval);
   }, [netPowerWatts, maxBatteryWh, currentAmbientTemp, powerDrawWatts, roverConfig, heaterMode, coreTempC, depthInPSR, triggeredEventKeys]);
 
-  // Handle resolving emergency choice
+  // Resolve emergency choice
   const handleResolveEmergency = (choice) => {
     setActiveEmergency(null);
     if (choice.batteryDelta) {
@@ -273,8 +518,8 @@ export default function SimulationScreen({
     setIsMoving(moving);
     setRoverPos(newPos);
     setRoverHeading(Math.round(newHeading));
+    lastUserActivity.current = Date.now();
 
-    // Play motor hum when starting movement
     if (moving && !isMovingSoundRef.current) {
       sound.playDrive();
       isMovingSoundRef.current = true;
@@ -283,16 +528,13 @@ export default function SimulationScreen({
     }
 
     if (deltaDist > 0) {
-      // Depth into PSR (starts at y=230)
       const currentDepth = Math.max(0, Math.round((newPos.y - 230) * 1.5));
       setDepthInPSR(currentDepth);
       setMaxDepthExplored((m) => Math.max(m, currentDepth));
 
-      // Battery consumption proportional to distance traveled
       const moveCost = (speedMode === 'DASH' ? 0.35 : speedMode === 'CAUTIOUS' ? 0.18 : 0.25) * deltaDist;
       setBatteryWh((b) => Math.max(0, b - moveCost));
 
-      // Breadcrumb tracks
       distSinceTrack.current += deltaDist;
       if (distSinceTrack.current >= 6.0) {
         setTracks((tr) => [...tr.slice(-60), { x: Math.round(newPos.x), y: Math.round(newPos.y) }]);
@@ -301,350 +543,74 @@ export default function SimulationScreen({
     }
   }, [speedMode]);
 
-  // 2D Tactical Mode Kinematic Movement Loop
-  const kinematic2D = useRef({ velocity: 0, heading: 90 });
-  useEffect(() => {
-    kinematic2D.current.heading = roverHeading;
-  }, []);
-
-  useEffect(() => {
-    if (viewMode !== '2D') return;
-
-    let animId;
-    let lastTime = performance.now();
-
-    const loop2D = (time) => {
-      const delta = Math.min(0.064, (time - lastTime) / 1000);
-      lastTime = time;
-
-      const fwd = driveCommand.forward;
-      const rev = driveCommand.reverse;
-      const left = driveCommand.left;
-      const right = driveCommand.right;
-      const brake = driveCommand.brake;
-      const boost = driveCommand.boost || speedMode === 'DASH';
-
-      const maxSpeed = boost ? 42 : speedMode === 'CAUTIOUS' ? 18 : 28;
-      const maxRev = -16;
-
-      let v = kinematic2D.current.velocity;
-
-      if (brake) {
-        v = v > 0 ? Math.max(0, v - 75 * delta) : Math.min(0, v + 75 * delta);
-      } else if (fwd && !rev) {
-        v = Math.min(maxSpeed, v + 22 * delta);
-      } else if (rev && !fwd) {
-        if (v > 2) v = Math.max(0, v - 45 * delta);
-        else v = Math.max(maxRev, v - 16 * delta);
-      } else {
-        v = v > 0 ? Math.max(0, v - 24 * delta) : Math.min(0, v + 24 * delta);
-      }
-      kinematic2D.current.velocity = v;
-
-      // Turning rate depends on speed
-      if (left && !right) {
-        const turnRate = Math.abs(v) > 2 ? 65 : 35;
-        kinematic2D.current.heading = (kinematic2D.current.heading - turnRate * delta + 360) % 360;
-      } else if (right && !left) {
-        const turnRate = Math.abs(v) > 2 ? 65 : 35;
-        kinematic2D.current.heading = (kinematic2D.current.heading + turnRate * delta) % 360;
-      }
-
-      const isMoving2D = Math.abs(v) > 0.5;
-      setIsMoving(isMoving2D);
-
-      if (isMoving2D) {
-        const rad = (kinematic2D.current.heading * Math.PI) / 180;
-        const ds = v * delta;
-        const dx = Math.cos(rad) * ds;
-        const dy = Math.sin(rad) * ds;
-
-        setRoverPos((prev) => {
-          const nextX = Math.max(40, Math.min(560, prev.x + dx));
-          const nextY = Math.max(60, Math.min(560, prev.y + dy));
-
-          const currentDepth = Math.max(0, Math.round((nextY - 230) * 1.5));
-          setDepthInPSR(currentDepth);
-          setMaxDepthExplored((m) => Math.max(m, currentDepth));
-
-          distSinceTrack.current += Math.abs(ds);
-          if (distSinceTrack.current >= 8.0) {
-            setTracks((tr) => [...tr.slice(-60), { x: Math.round(nextX), y: Math.round(nextY) }]);
-            distSinceTrack.current = 0;
-          }
-
-          return { x: nextX, y: nextY };
-        });
-
-        setRoverHeading(Math.round(kinematic2D.current.heading));
-        const drain = (speedMode === 'DASH' ? 0.35 : 0.22) * Math.abs(ds);
-        setBatteryWh((b) => Math.max(0, b - drain));
-      }
-
-      animId = requestAnimationFrame(loop2D);
-    };
-
-    animId = requestAnimationFrame(loop2D);
-    return () => cancelAnimationFrame(animId);
-  }, [viewMode, driveCommand, speedMode]);
-
-  // Move Rover Action (for button single click taps)
-  const handleMove = (direction) => {
-    if (waypoint) setWaypoint(null); // Manual drive cancels autonomous waypoint navigation
-    sound.playDrive();
-    if (direction === 'forward') {
-      setDriveCommand((p) => ({ ...p, forward: true }));
-      setTimeout(() => setDriveCommand((p) => ({ ...p, forward: false })), 420);
-    } else if (direction === 'reverse') {
-      setDriveCommand((p) => ({ ...p, reverse: true }));
-      setTimeout(() => setDriveCommand((p) => ({ ...p, reverse: false })), 420);
-    }
-  };
-
-  // Turn Rover Action (for button single click taps)
-  const handleTurn = (deltaDeg) => {
-    if (waypoint) setWaypoint(null); // Manual steer cancels autonomous waypoint navigation
-    sound.playBeep(700, 0.04);
-    if (deltaDeg < 0) {
-      setDriveCommand((p) => ({ ...p, left: true }));
-      setTimeout(() => setDriveCommand((p) => ({ ...p, left: false })), 350);
-    } else {
-      setDriveCommand((p) => ({ ...p, right: true }));
-      setTimeout(() => setDriveCommand((p) => ({ ...p, right: false })), 350);
-    }
-  };
-
-  // Canvas Click-to-Move Waypoint Handler
-  const handleCanvasClick = (e) => {
-    if (activeEmergency) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const clickX = Math.round((e.clientX - rect.left) * scaleX);
-    const clickY = Math.round((e.clientY - rect.top) * scaleY);
-
-    // Clamp coordinates within operational canvas bounds
-    const targetX = Math.max(40, Math.min(560, clickX));
-    const targetY = Math.max(60, Math.min(560, clickY));
-
-    // If clicking near rover, cancel waypoint station keeping
-    const distToRover = Math.hypot(targetX - roverPos.x, targetY - roverPos.y);
-    if (distToRover < 18) {
-      setWaypoint(null);
-      sound.playBeep(450, 0.05);
-      addLog('Autonomous waypoint navigation cancelled by operator.', 'info');
-      return;
-    }
-
-    setWaypoint({ x: targetX, y: targetY });
-    sound.playBeep(880, 0.06);
-    addLog(`Waypoint beacon locked at [${targetX}, ${targetY}]. Autonomous drive sequence engaged.`, 'info');
-  };
-
-  // Autonomous Waypoint Navigation Loop
-  useEffect(() => {
-    if (!waypoint) return;
-
-    const navInterval = setInterval(() => {
-      setRoverPos((prev) => {
-        const dx = waypoint.x - prev.x;
-        const dy = waypoint.y - prev.y;
-        const dist = Math.hypot(dx, dy);
-
-        // Arrival condition (within 14px radius)
-        if (dist < 14) {
-          setWaypoint(null);
-          sound.playVictory();
-          addLog(`Waypoint station reached at [${waypoint.x}, ${waypoint.y}]. Holding position.`, 'success');
-          return prev;
-        }
-
-        // Low battery emergency cutoff
-        if (batteryWh <= 15) {
-          setWaypoint(null);
-          sound.playWarning();
-          addLog('WAYPOINT SEQUENCE ABORTED: Low battery reserve (<15 Wh). Holding position.', 'warning');
-          return prev;
-        }
-
-        // Steer heading towards waypoint bearing
-        const targetDeg = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
-        setRoverHeading((prevHead) => {
-          let diff = (targetDeg - prevHead + 360) % 360;
-          if (diff > 180) diff -= 360;
-          if (Math.abs(diff) > 15) {
-            const turnStep = Math.sign(diff) * Math.min(30, Math.abs(diff));
-            return (prevHead + turnStep + 360) % 360;
-          }
-          return Math.round(targetDeg);
-        });
-
-        // Advance toward waypoint
-        const stepDist = speedMode === 'DASH' ? 18 : speedMode === 'CAUTIOUS' ? 8 : 12;
-        const moveDist = Math.min(stepDist, dist);
-        const rad = Math.atan2(dy, dx);
-        const nextX = Math.max(40, Math.min(560, prev.x + Math.cos(rad) * moveDist));
-        const nextY = Math.max(60, Math.min(560, prev.y + Math.sin(rad) * moveDist));
-
-        setTracks((tr) => [...tr.slice(-50), { x: nextX, y: nextY }]);
-
-        const currentDepth = Math.max(0, Math.round((nextY - 230) * 1.5));
-        setDepthInPSR(currentDepth);
-        setMaxDepthExplored((m) => Math.max(m, currentDepth));
-
-        const moveCost = speedMode === 'DASH' ? 8 : 4;
-        setBatteryWh((b) => Math.max(0, b - moveCost));
-
-        return { x: nextX, y: nextY };
-      });
-    }, 280);
-
-    return () => clearInterval(navInterval);
-  }, [waypoint, speedMode, batteryWh, addLog]);
-
-  // Keyboard Navigation: WASD & Arrow Keys
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (activeEmergency) return;
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
-      const key = e.key.toLowerCase();
-      if (key === 'w' || key === 'arrowup') {
-        e.preventDefault();
-        handleMove('forward');
-      } else if (key === 's' || key === 'arrowdown') {
-        e.preventDefault();
-        handleMove('reverse');
-      } else if (key === 'a' || key === 'arrowleft') {
-        e.preventDefault();
-        handleTurn(-30);
-      } else if (key === 'd' || key === 'arrowright') {
-        e.preventDefault();
-        handleTurn(30);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeEmergency, waypoint, isMoving, speedMode, roverHeading]);
-
-  // Functional Wait for Sun / Solar Recharge Action
-  const handleWaitSolarRecharge = () => {
-    // NASA Flight Rule: Solar recharge inside cold trap is strictly impossible
-    if (isInsidePSR) {
-      sound.playAlarm();
-      addLog('RECHARGE REJECTED: Rover is inside Permanently Shadowed Region (0.0 W solar flux). Stationary dwell will cause cryogenic freezing!', 'danger');
-      return;
-    }
-
-    if (batteryWh >= maxBatteryWh - 0.5) {
-      sound.playBeep(600, 0.05);
-      addLog('SOLAR RECHARGE: Battery cells are already at 100% capacity.', 'info');
-      return;
-    }
-
-    const currentSolarWatts = calculateSolarPower(roverConfig.solar, currentIllumination);
-    const idleDrawWatts = calculatePowerDraw(roverConfig, {
-      isMoving: false,
-      isScanning: false,
-      isDrilling: false,
-      heaterState: heaterMode
-    });
-
-    const netSurplusWatts = currentSolarWatts - idleDrawWatts;
-
-    if (netSurplusWatts <= 0) {
-      sound.playWarning();
-      addLog(`INSUFFICIENT SOLAR FLUX: Net power is ${netSurplusWatts} W. Illumination (${currentIllumination}%) too low to recharge battery with active heater draw.`, 'warning');
-      return;
-    }
-
-    // 20-minute solar soak dwell
-    const dwellMinutes = 20;
-    const gainedWh = Math.round(netSurplusWatts * (dwellMinutes / 60) * 10) / 10;
-    const nextBatteryWh = Math.min(maxBatteryWh, Math.round((batteryWh + gainedWh) * 10) / 10);
-
-    setBatteryWh(nextBatteryWh);
-    setMissionElapsedMinutes((m) => m + dwellMinutes);
-
-    // Avionics passively warms toward daytime ambient baseline (-45°C)
-    setCoreTempC((prev) => {
-      const targetAmbient = currentAmbientTemp;
-      const warmed = prev + (targetAmbient - prev) * 0.35;
-      return Math.round(warmed * 10) / 10;
-    });
-
-    sound.playVictory();
-    addLog(`SOLAR DWELL COMPLETE (+${dwellMinutes}m): Harvested +${gainedWh} Wh solar energy. Battery storage at ${Math.round((nextBatteryWh / maxBatteryWh) * 100)}%.`, 'success');
-  };
-
-  // Scan Regolith Action
-  const handleScan = () => {
+  // Action: Scan Ground
+  const handleScan = useCallback(() => {
+    if (isScanning || isDrilling) return;
+    lastUserActivity.current = Date.now();
     sound.playScan();
     setIsScanning(true);
-    addLog('NSS/NIRVSS active scan initiated...', 'info');
+    addLog('Scanning regolith for subsurface water ice...', 'info');
 
     setTimeout(() => {
       setIsScanning(false);
-      // Check proximity to ice deposits
       let foundIce = false;
       iceDepositsRef.current.forEach((dep) => {
         const dist = Math.hypot(dep.x - roverPos.x, dep.y - roverPos.y);
-        if (dist < 55 && !dep.scanned) {
+        if (dist < 65 && !dep.scanned) {
           dep.scanned = true;
           foundIce = true;
           sound.playDiscovery();
           const detectedKg = Math.round(dep.concentration * 3.5);
           setWaterIceKg((w) => w + detectedKg);
           setSciencePoints((s) => s + 45);
-          addLog(`ICE ANOMALY CONFIRMED: ${dep.concentration}% wt eq H₂O detected at ${dep.depth}m depth! (+${detectedKg}kg, +45 Science)`, 'success');
+          addLog(`💎 ICE DETECTED: ${dep.concentration}% wt eq H₂O located! (+${detectedKg}kg, +45 Science)`, 'success');
+          showToast(`💎 Ice detected! Stop the rover and press [E] to drill.`, 'success');
         }
       });
       if (foundIce) {
         setIceDeposits([...iceDepositsRef.current]);
-      }
-
-      if (!foundIce) {
+      } else {
         if (isInsidePSR) {
           setSciencePoints((s) => s + 15);
-          addLog(`Diffuse epithermal neutron reading logged inside cold trap. Trace hydrogen detected (+15 Science).`, 'info');
+          addLog('Trace hydrogen surveyed in crater floor (+15 Science). No concentrated ice.', 'info');
         } else {
           setSciencePoints((s) => s + 5);
-          addLog('Regolith scan complete. Desiccated surface material on sunlit rim (+5 Science).', 'info');
+          addLog('Regolith scanned on sunlit rim (+5 Science).', 'info');
         }
       }
       setBatteryWh((b) => Math.max(0, b - 15));
     }, 800);
-  };
+  }, [isScanning, isDrilling, roverPos, isInsidePSR, addLog, showToast]);
 
-  // Drill Core Action
-  const handleDrill = () => {
-    const hasDrill = roverConfig.instruments?.some((i) => i.id.includes('drill'));
+  // Action: Drill Sample
+  const handleDrill = useCallback(() => {
+    if (isDrilling || isScanning || isMoving) return;
+    lastUserActivity.current = Date.now();
+
+    // The TRIDENT rotary percussive drill is standard flight equipment available on all rovers
+    const hasDrill = true;
     if (!hasDrill) {
       sound.playWarning();
-      addLog('COMMAND REJECTED: TRIDENT drill is not installed on this chassis!', 'danger');
+      addLog('NO DRILL: TRIDENT drill is not installed on this rover configuration!', 'danger');
       return;
     }
 
     if (batteryWh < 65) {
       sound.playWarning();
-      addLog('INSUFFICIENT POWER: Drill sequence requires at least 65 Wh reserve.', 'warning');
+      addLog('LOW POWER: Drill requires at least 65 Wh battery reserve.', 'warning');
       return;
     }
 
     sound.playDrill();
     setIsDrilling(true);
-    addLog('TRIDENT rotary percussive drill deploying into cryogenic permafrost...', 'warning');
+    addLog('TRIDENT rotary percussive drill penetrating lunar ice layer...', 'warning');
 
     setTimeout(() => {
       setIsDrilling(false);
       let drilledDeposit = false;
       iceDepositsRef.current.forEach((dep) => {
         const dist = Math.hypot(dep.x - roverPos.x, dep.y - roverPos.y);
-        if (dist < 55 && !dep.drilled) {
+        if (dist < 65 && !dep.drilled) {
           dep.drilled = true;
           drilledDeposit = true;
           sound.playVictory();
@@ -652,33 +618,100 @@ export default function SimulationScreen({
           setWaterIceKg((w) => w + coreIceKg);
           setDrillCores((d) => d + 1);
           setSciencePoints((s) => s + 85);
-          addLog(`DRILL SUCCESS: Extracted 100cm pristine cryogenic ice core! Yield: ${coreIceKg}kg H₂O (+85 Science)`, 'success');
+          addLog(`⛏️ DRILL SUCCESS: Extracted cryogenic ice core! +${coreIceKg}kg H₂O (+85 Science)`, 'success');
+          showToast(`⛏️ Ice core extracted! (${drillCores + 1}/4 samples)`, 'success');
         }
       });
       if (drilledDeposit) {
         setIceDeposits([...iceDepositsRef.current]);
-      }
-
-      if (!drilledDeposit) {
+      } else {
         setDrillCores((d) => d + 1);
         setSciencePoints((s) => s + 25);
-        addLog('Core extraction complete. Deep cryogenic silicates recovered (+25 Science).', 'info');
+        addLog('Core extraction complete: Cryogenic silicates recovered (+25 Science).', 'info');
       }
 
       setBatteryWh((b) => Math.max(0, b - 60));
-      setCoreTempC((t) => t - 5); // Thermal loss during mechanical drilling
+      setCoreTempC((t) => t - 5);
     }, 1400);
-  };
+  }, [isDrilling, isScanning, isMoving, roverConfig.instruments, batteryWh, roverPos, drillCores, addLog, showToast]);
 
-  // Unified Continuous Keyboard Driving: WASD, Arrow Keys, Space (Brake/Scan), Shift (Boost), E/R (Drill), V (Toggle View)
+  // Action: Wait / Solar Recharge
+  const handleWaitSolarRecharge = useCallback(() => {
+    if (isMoving || isScanning || isDrilling) return;
+    lastUserActivity.current = Date.now();
+
+    const rechargeResult = calculateSolarRechargeStep({
+      currentWh: batteryWh,
+      maxCapacityWh: maxBatteryWh,
+      solarConfig: roverConfig.solar,
+      illumination: currentIllumination,
+      roverConfig,
+      heaterMode,
+      dwellMinutes: 20,
+      isInsidePSR,
+      currentTempC: coreTempC,
+      ambientTempC: currentAmbientTemp
+    });
+
+    if (!rechargeResult.success) {
+      if (rechargeResult.reason === 'RECHARGE_IMPOSSIBLE_IN_PSR') {
+        sound.playAlarm();
+        addLog('RECHARGE REJECTED: Rover is in darkness (0.0 W solar flux). Dwell in dark will freeze avionics!', 'danger');
+        showToast('Cannot recharge: 0.0 W solar flux in the Dark Zone!', 'danger');
+      } else if (rechargeResult.reason === 'BATTERY_ALREADY_FULL') {
+        sound.playBeep(600, 0.05);
+        addLog('BATTERY FULL: Energy storage is already at 100% capacity.', 'info');
+        showToast('Battery is already at 100% capacity.', 'info');
+      } else if (rechargeResult.reason === 'INSUFFICIENT_SOLAR_SURPLUS') {
+        sound.playWarning();
+        addLog(`INSUFFICIENT SUNLIGHT: Net power is ${rechargeResult.netSurplusWatts} W. Illumination too low to charge.`, 'warning');
+      }
+      return;
+    }
+
+    setBatteryWh(rechargeResult.newBatteryWh);
+    setMissionElapsedMinutes((m) => m + 20);
+    setCoreTempC(rechargeResult.newTempC);
+
+    sound.playVictory();
+    addLog(`☀️ RECHARGE COMPLETE (+20m): Gained +${rechargeResult.gainedWh} Wh solar energy. Battery at ${Math.round((rechargeResult.newBatteryWh / maxBatteryWh) * 100)}%.`, 'success');
+    showToast(`☀️ Recharged +${rechargeResult.gainedWh} Wh in sunlight!`, 'success');
+  }, [isMoving, isScanning, isDrilling, batteryWh, maxBatteryWh, roverConfig, currentIllumination, heaterMode, isInsidePSR, coreTempC, currentAmbientTemp, addLog, showToast]);
+
+  // Cycle Subsystems Shortcuts (H = Heater, V = Speed, C = Camera)
+  const cycleHeaterMode = useCallback(() => {
+    sound.playBeep(750, 0.04);
+    const order = ['AUTO', 'LOW', 'HIGH', 'OFF'];
+    const next = order[(order.indexOf(heaterMode) + 1) % order.length];
+    setHeaterMode(next);
+    showToast(`Heater Mode: ${next}`, 'info');
+  }, [heaterMode, showToast]);
+
+  const cycleSpeedMode = useCallback(() => {
+    sound.playBeep(750, 0.04);
+    const order = ['CAUTIOUS', 'NORMAL', 'DASH'];
+    const next = order[(order.indexOf(speedMode) + 1) % order.length];
+    setSpeedMode(next);
+    showToast(`Drive Speed: ${next}`, 'info');
+  }, [speedMode, showToast]);
+
+  const cycleCameraMode = useCallback(() => {
+    sound.playBeep(750, 0.04);
+    const order = ['CHASE', 'ORBIT', 'PANORAMA'];
+    const next = order[(order.indexOf(cameraMode) + 1) % order.length];
+    setCameraMode(next);
+    showToast(`Camera: ${next}`, 'info');
+  }, [cameraMode, showToast]);
+
+  // Global Keyboard Shortcuts (WASD, Arrows, Space, E, R, H, V, C, M, ?, Esc)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Do not capture keyboard when typing in inputs or when emergency modal is open
       if (activeEmergency) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
 
       const code = e.code;
       const key = e.key;
+      lastUserActivity.current = Date.now();
 
       if (code === 'KeyW' || code === 'ArrowUp') {
         e.preventDefault();
@@ -695,292 +728,62 @@ export default function SimulationScreen({
       } else if (code === 'Space') {
         e.preventDefault();
         if (isMoving) {
-          // If moving: apply emergency mechanical brake
           setDriveCommand((p) => ({ ...p, brake: true }));
-        } else if (!isScanning && !isDrilling) {
-          // If stationary: trigger regolith scientific scan
+        } else {
           handleScan();
         }
       } else if (code === 'ShiftLeft' || code === 'ShiftRight') {
         setDriveCommand((p) => ({ ...p, boost: true }));
-      } else if (key === 'e' || key === 'E' || key === 'r' || key === 'R') {
+      } else if (key === 'e' || key === 'E') {
         e.preventDefault();
-        if (!isDrilling && !isScanning) handleDrill();
+        handleDrill();
+      } else if (key === 'r' || key === 'R') {
+        e.preventDefault();
+        handleWaitSolarRecharge();
+      } else if (key === 'h' || key === 'H') {
+        e.preventDefault();
+        cycleHeaterMode();
       } else if (key === 'v' || key === 'V') {
         e.preventDefault();
-        setViewMode((m) => (m === '2D' ? '3D' : '2D'));
+        cycleSpeedMode();
+      } else if (key === 'c' || key === 'C') {
+        e.preventDefault();
+        cycleCameraMode();
+      } else if (key === 'm' || key === 'M') {
+        e.preventDefault();
+        setIsRadarOpen((prev) => !prev);
+      } else if (key === '?' || (e.shiftKey && code === 'Slash')) {
+        e.preventDefault();
+        setIsHowToPlayOpen((prev) => !prev);
+      } else if (key === 'Escape') {
+        e.preventDefault();
+        if (isHowToPlayOpen) closeHowToPlay();
+        else if (isLogModalOpen) setIsLogModalOpen(false);
+        else if (isSettingsOpen) setIsSettingsOpen(false);
       }
     };
 
     const handleKeyUp = (e) => {
       const code = e.code;
-      if (code === 'KeyW' || code === 'ArrowUp') {
-        setDriveCommand((p) => ({ ...p, forward: false }));
-      } else if (code === 'KeyS' || code === 'ArrowDown') {
-        setDriveCommand((p) => ({ ...p, reverse: false }));
-      } else if (code === 'KeyA' || code === 'ArrowLeft') {
-        setDriveCommand((p) => ({ ...p, left: false }));
-      } else if (code === 'KeyD' || code === 'ArrowRight') {
-        setDriveCommand((p) => ({ ...p, right: false }));
-      } else if (code === 'Space') {
-        setDriveCommand((p) => ({ ...p, brake: false }));
-      } else if (code === 'ShiftLeft' || code === 'ShiftRight') {
-        setDriveCommand((p) => ({ ...p, boost: false }));
-      }
-    };
-
-    const handleBlur = () => {
-      setDriveCommand({
-        forward: false,
-        reverse: false,
-        left: false,
-        right: false,
-        brake: false,
-        boost: false
-      });
+      if (code === 'KeyW' || code === 'ArrowUp') setDriveCommand((p) => ({ ...p, forward: false }));
+      else if (code === 'KeyS' || code === 'ArrowDown') setDriveCommand((p) => ({ ...p, reverse: false }));
+      else if (code === 'KeyA' || code === 'ArrowLeft') setDriveCommand((p) => ({ ...p, left: false }));
+      else if (code === 'KeyD' || code === 'ArrowRight') setDriveCommand((p) => ({ ...p, right: false }));
+      else if (code === 'Space') setDriveCommand((p) => ({ ...p, brake: false }));
+      else if (code === 'ShiftLeft' || code === 'ShiftRight') setDriveCommand((p) => ({ ...p, boost: false }));
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', handleBlur);
     };
-  }, [activeEmergency, isMoving, isScanning, isDrilling]);
+  }, [activeEmergency, isMoving, handleScan, handleDrill, handleWaitSolarRecharge, cycleHeaterMode, cycleSpeedMode, cycleCameraMode, isHowToPlayOpen, isLogModalOpen, isSettingsOpen]);
 
-  // Render Topographic Lunar Surface Map Canvas
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const width = (canvas.width = 600);
-    const height = (canvas.height = 600);
-
-    ctx.clearRect(0, 0, width, height);
-
-    // 1. Base Lunar Regolith Gradient
-    // Y=0 to 140: Bright Sunlit Ridge
-    // Y=140 to 240: Penumbra Slope
-    // Y=240 to 600: Pitch Black Permanently Shadowed Region
-    const terrainGrad = ctx.createLinearGradient(0, 0, 0, height);
-    terrainGrad.addColorStop(0, '#334155'); // Sunlit crest
-    terrainGrad.addColorStop(0.22, '#1e293b'); // Rim slope
-    terrainGrad.addColorStop(0.38, '#0f172a'); // Penumbra threshold
-    terrainGrad.addColorStop(0.44, '#030712'); // Shadow line
-    terrainGrad.addColorStop(1, '#000206'); // Deep PSR floor
-    ctx.fillStyle = terrainGrad;
-    ctx.fillRect(0, 0, width, height);
-
-    // 2. Grazing Polar Sunlight Beams (Sun elevation ~1.8°)
-    const sunBeam = ctx.createLinearGradient(0, 0, width, 180);
-    sunBeam.addColorStop(0, 'rgba(0, 240, 255, 0.22)');
-    sunBeam.addColorStop(0.5, 'rgba(186, 230, 253, 0.15)');
-    sunBeam.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = sunBeam;
-    ctx.fillRect(0, 0, width, 180);
-
-    // 3. Shadow Boundary Contour Line (Sharp razor-edge shadow)
-    ctx.strokeStyle = '#00f0ff';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 6]);
-    ctx.beginPath();
-    ctx.moveTo(0, 230);
-    // Slight wavy crater rim shadow
-    for (let x = 0; x <= width; x += 30) {
-      const offset = Math.sin(x * 0.02) * 12 + Math.cos(x * 0.05) * 6;
-      ctx.lineTo(x, 230 + offset);
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // 4. Shadow boundary label
-    ctx.fillStyle = 'rgba(0, 240, 255, 0.7)';
-    ctx.font = '10px monospace';
-    ctx.fillText('SHADOW BOUNDARY // 0.0W SOLAR BEYOND THIS LINE', 20, 222);
-
-    // 5. Ambient Starlight & Secondary Earthshine inside PSR
-    const earthshine = ctx.createRadialGradient(width * 0.7, 400, 20, width * 0.7, 400, 300);
-    earthshine.addColorStop(0, 'rgba(30, 58, 138, 0.08)');
-    earthshine.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = earthshine;
-    ctx.fillRect(0, 230, width, height - 230);
-
-    // 6. Impact Craters on Terrain
-    const craters = [
-      { x: 120, y: 90, r: 24, inSun: true },
-      { x: 480, y: 110, r: 35, inSun: true },
-      { x: 160, y: 320, r: 42, inSun: false },
-      { x: 380, y: 460, r: 60, inSun: false },
-      { x: 180, y: 520, r: 30, inSun: false }
-    ];
-
-    craters.forEach((crater) => {
-      ctx.beginPath();
-      ctx.arc(crater.x, crater.y, crater.r, 0, Math.PI * 2);
-      ctx.strokeStyle = crater.inSun ? 'rgba(148, 163, 184, 0.4)' : 'rgba(30, 41, 59, 0.6)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Shadow inside crater rim
-      const craterGrad = ctx.createRadialGradient(
-        crater.x - crater.r * 0.3,
-        crater.y - crater.r * 0.3,
-        2,
-        crater.x,
-        crater.y,
-        crater.r
-      );
-      craterGrad.addColorStop(0, crater.inSun ? 'rgba(51, 65, 85, 0.4)' : 'rgba(2, 6, 23, 0.8)');
-      craterGrad.addColorStop(1, crater.inSun ? 'rgba(15, 23, 42, 0.8)' : 'rgba(0, 0, 0, 0.95)');
-      ctx.fillStyle = craterGrad;
-      ctx.fill();
-    });
-
-    // 7. Render Subsurface Ice Deposit Sparkles (revealed if scanned)
-    iceDepositsRef.current.forEach((dep) => {
-      if (dep.scanned || Math.hypot(dep.x - roverPos.x, dep.y - roverPos.y) < 70) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(dep.x, dep.y, 14, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
-        ctx.fill();
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        ctx.fillStyle = '#67e8f9';
-        ctx.font = '9px monospace';
-        ctx.fillText(`ICE ${dep.concentration}%`, dep.x - 20, dep.y - 18);
-        ctx.restore();
-      }
-    });
-
-    // 8. Render Rover Wheel Tracks
-    if (tracks.length > 1) {
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(tracks[0].x, tracks[0].y);
-      for (let i = 1; i < tracks.length; i++) {
-        ctx.lineTo(tracks[i].x, tracks[i].y);
-      }
-      ctx.stroke();
-    }
-
-    // 9. Rover Headlight Beam cutting through darkness
-    const rad = (roverHeading * Math.PI) / 180;
-    const beamLength = 110;
-    const beamSpread = 0.55; // Angle spread
-
-    ctx.save();
-    ctx.translate(roverPos.x, roverPos.y);
-
-    const lightCone = ctx.createRadialGradient(0, 0, 8, Math.cos(rad) * 60, Math.sin(rad) * 60, beamLength);
-    lightCone.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
-    lightCone.addColorStop(0.3, 'rgba(0, 240, 255, 0.4)');
-    lightCone.addColorStop(0.8, 'rgba(0, 240, 255, 0.1)');
-    lightCone.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, beamLength, rad - beamSpread, rad + beamSpread);
-    ctx.closePath();
-    ctx.fillStyle = lightCone;
-    ctx.fill();
-
-    // 10. Render Rover Body & Chassis
-    ctx.rotate(rad);
-
-    // Rover Shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.fillRect(-12, -8, 24, 16);
-
-    // Wheels
-    ctx.fillStyle = '#64748b';
-    ctx.fillRect(-14, -14, 8, 5);
-    ctx.fillRect(6, -14, 8, 5);
-    ctx.fillRect(-14, 9, 8, 5);
-    ctx.fillRect(6, 9, 8, 5);
-
-    // Body
-    ctx.fillStyle = '#0f172a';
-    ctx.strokeStyle = '#00f0ff';
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(-10, -9, 20, 18);
-    ctx.strokeRect(-10, -9, 20, 18);
-
-    // Solar mast or sensor head
-    ctx.fillStyle = isInsidePSR ? '#ef4444' : '#00f0ff';
-    ctx.beginPath();
-    ctx.arc(4, 0, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Heading Arrow pointer
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(8, 0);
-    ctx.lineTo(15, 0);
-    ctx.lineTo(12, -3);
-    ctx.moveTo(15, 0);
-    ctx.lineTo(12, 3);
-    ctx.stroke();
-
-    ctx.restore();
-
-    // 11. Render Active Waypoint Beacon & Autonomous Guidance Vector
-    if (waypoint) {
-      ctx.save();
-      // Dashed flight vector from rover to target
-      ctx.strokeStyle = 'rgba(0, 240, 255, 0.7)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(roverPos.x, roverPos.y);
-      ctx.lineTo(waypoint.x, waypoint.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Outer targeting ring
-      ctx.beginPath();
-      ctx.arc(waypoint.x, waypoint.y, 13, 0, Math.PI * 2);
-      ctx.strokeStyle = '#00f0ff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // Pulsing inner beacon circle
-      ctx.beginPath();
-      ctx.arc(waypoint.x, waypoint.y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#00f0ff';
-      ctx.fill();
-
-      // Crosshair reticle marks
-      ctx.strokeStyle = 'rgba(0, 240, 255, 0.85)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(waypoint.x - 17, waypoint.y);
-      ctx.lineTo(waypoint.x - 7, waypoint.y);
-      ctx.moveTo(waypoint.x + 7, waypoint.y);
-      ctx.lineTo(waypoint.x + 17, waypoint.y);
-      ctx.moveTo(waypoint.x, waypoint.y - 17);
-      ctx.lineTo(waypoint.x, waypoint.y - 7);
-      ctx.moveTo(waypoint.x, waypoint.y + 7);
-      ctx.lineTo(waypoint.x, waypoint.y + 17);
-      ctx.stroke();
-
-      // Waypoint distance badge
-      const distMeters = Math.round(Math.hypot(waypoint.x - roverPos.x, waypoint.y - roverPos.y) * 1.5);
-      ctx.fillStyle = '#67e8f9';
-      ctx.font = '10px monospace';
-      ctx.fillText(`WAYPOINT [${distMeters}m]`, waypoint.x + 15, waypoint.y - 8);
-      ctx.restore();
-    }
-  }, [roverPos, roverHeading, tracks, isInsidePSR, waypoint, iceDeposits, viewMode]);
-
-  // Complete Mission handler (return to base or conclude)
-  const handleDeclareCompletion = () => {
+  // Conclude Mission Handlers
+  const handleConfirmFinish = () => {
+    setShowFinishConfirm(false);
     sound.playVictory();
     const isSafelyOnRim = roverPos.y < 160;
     const finalOutcome = isSafelyOnRim ? 'FULL_SUCCESS' : 'PARTIAL_SUCCESS';
@@ -997,410 +800,593 @@ export default function SimulationScreen({
     });
   };
 
+  // Quests Checklist Data
+  const questsData = [
+    {
+      id: 1,
+      title: isEngineerMode ? LABELS.psr.engineer : 'Reach the Dark Zone',
+      subtext: isEngineerMode
+        ? `Shadow at Y: 230 (${depthInPSR}m inside)`
+        : 'Cross the glowing shadow line',
+      done: quest1Done
+    },
+    {
+      id: 2,
+      title: isEngineerMode ? 'Survey Volatiles' : 'Find Water Ice',
+      subtext: isEngineerMode
+        ? `${waterIceKg} kg H₂O detected`
+        : 'Scan ground until ice is found',
+      done: quest2Done
+    },
+    {
+      id: 3,
+      title: isEngineerMode ? 'Cryogenic Coring' : 'Drill 4 Samples',
+      subtext: isEngineerMode
+        ? `TRIDENT samples: ${drillCores}/4`
+        : `Harvest ice cores (${drillCores}/4)`,
+      done: quest3Done
+    },
+    {
+      id: 4,
+      title: isEngineerMode ? 'Ascend to Sunlit Ridge' : 'Return to Sunny Ridge',
+      subtext: isEngineerMode
+        ? (roverPos.y < 160 ? 'Uplink active' : 'Occulted / In transit')
+        : (roverPos.y < 160 ? 'Safely on sunny rim' : 'Drive north before 0% battery'),
+      done: quest4Done
+    }
+  ];
+
   return (
-    <div className="relative z-10 max-w-7xl mx-auto px-4 py-4">
-      {/* Top Telemetry Alert Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 mb-3">
-        {/* Solar Gen */}
-        <div className={`p-2 rounded border font-mono text-xs flex items-center justify-between ${
-          isInsidePSR ? 'bg-red-950/40 border-red-500/50 text-red-300' : 'bg-cyan-950/40 border-cyan-500/40 text-cyan-300'
-        }`}>
-          <div className="flex items-center space-x-1.5">
-            <Sun className={`w-3.5 h-3.5 ${isInsidePSR ? 'text-red-400' : 'text-cyan-400'}`} />
-            <span>Solar:</span>
-          </div>
-          <span className="font-bold">{solarGenWatts} W</span>
-        </div>
-
-        {/* Battery SOC */}
-        <div className={`p-2 rounded border font-mono text-xs flex items-center justify-between ${
-          batteryPercent < 25 ? 'bg-red-950/50 border-red-500 text-red-300 animate-pulse' : 'bg-space-900 border-slate-700 text-slate-200'
-        }`}>
-          <div className="flex items-center space-x-1.5">
-            <Battery className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Battery:</span>
-          </div>
-          <span className="font-bold">{batteryPercent}% ({Math.round(batteryWh)}Wh)</span>
-        </div>
-
-        {/* Core Temp */}
-        <div className={`p-2 rounded border font-mono text-xs flex items-center justify-between ${
-          thermalStatus.color === 'red' ? 'bg-red-950/50 border-red-500 text-red-300 animate-pulse' : 'bg-space-900 border-slate-700 text-slate-200'
-        }`}>
-          <div className="flex items-center space-x-1.5">
-            <ThermometerSnowflake className="w-3.5 h-3.5 text-amber-400" />
-            <span>Core:</span>
-          </div>
-          <span className="font-bold">{coreTempC}°C</span>
-        </div>
-
-        {/* Net Power */}
-        <div className="p-2 rounded border border-slate-700 bg-space-900 font-mono text-xs flex items-center justify-between text-slate-200">
-          <div className="flex items-center space-x-1.5">
-            <Zap className="w-3.5 h-3.5 text-yellow-400" />
-            <span>Net:</span>
-          </div>
-          <span className={`font-bold ${netPowerWatts >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {netPowerWatts > 0 ? `+${netPowerWatts}` : netPowerWatts} W
-          </span>
-        </div>
-
-        {/* Comm Signal */}
-        <div className="p-2 rounded border border-slate-700 bg-space-900 font-mono text-xs flex items-center justify-between text-slate-200">
-          <div className="flex items-center space-x-1.5">
-            <Radio className="w-3.5 h-3.5 text-blue-400" />
-            <span>Comm:</span>
-          </div>
-          <span className={`font-bold text-[11px] ${commTelemetry.status.includes('OCCULTED') ? 'text-red-400' : 'text-cyan-300'}`}>
-            {commTelemetry.marginDb > 0 ? `+${commTelemetry.marginDb} dB` : 'NO SIGNAL'}
-          </span>
-        </div>
-
-        {/* PSR Depth */}
-        <div className="p-2 rounded border border-cyan-500/30 bg-space-900 font-mono text-xs flex items-center justify-between text-slate-200">
-          <div className="flex items-center space-x-1.5">
-            <Compass className="w-3.5 h-3.5 text-cyan-400" />
-            <span>PSR Depth:</span>
-          </div>
-          <span className="font-bold text-cyan-300">{depthInPSR} m</span>
-        </div>
+    <div className="relative w-full h-full overflow-hidden select-none bg-black">
+      {/* ========================================================= */}
+      {/* 1. FULL-SCREEN 3D HORIZON CANVAS (Position: Absolute Inset-0) */}
+      {/* ========================================================= */}
+      <div className="absolute inset-0 z-0">
+        <Lunar3DEnvironment
+          roverPos={roverPos}
+          roverHeading={roverHeading}
+          onRoverUpdate={handleRoverUpdateFrom3D}
+          driveCommand={driveCommand}
+          speedMode={speedMode}
+          isMoving={isMoving}
+          isDrilling={isDrilling}
+          isScanning={isScanning}
+          selectedSite={selectedSite}
+          iceDeposits={iceDepositsRef.current}
+          waypoint={waypoint}
+          onSetWaypoint={(wp) => setWaypoint(wp)}
+          onWaypointReached={() => {
+            setWaypoint(null);
+            sound.playVictory();
+            addLog('Waypoint reached.', 'success');
+          }}
+          onFallbackTo2D={() => {}}
+          isFullScreen={true}
+          hideInternalHUD={true}
+          externalCameraMode={cameraMode}
+          onCameraModeChange={(mode) => setCameraMode(mode)}
+          resetCameraTrigger={resetCameraTrigger}
+          minimapCollapsed={!isRadarOpen}
+          hideMinimap={!isRadarOpen}
+        />
       </div>
 
-      {/* Main Simulation Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left: Interactive Map / 3D Visualization (7 Cols) */}
-        <div className="lg:col-span-7 space-y-2">
-          {/* 2D / 3D Mode Toggle Header */}
-          <div className="flex items-center justify-between px-1">
-            <div className="text-xs font-mono text-cyan-400 font-bold flex items-center space-x-1.5">
-              <Compass className="w-3.5 h-3.5 text-cyan-400" />
-              <span>SURFACE EXPLORATION PERSPECTIVE</span>
-            </div>
-            <div className="flex items-center space-x-1 bg-space-950 p-1 rounded-lg border border-slate-800">
-              <button
-                onClick={() => {
-                  sound.playBeep(750, 0.04);
-                  setViewMode('2D');
-                }}
-                className={`px-3 py-1 rounded font-mono text-xs flex items-center space-x-1.5 transition-all ${
-                  viewMode === '2D'
-                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(0,240,255,0.4)]'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-                title="Switch to 2D Tactical View (Key: V)"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>2D TACTICAL MAP</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  sound.playBeep(850, 0.05);
-                  setViewMode('3D');
-                }}
-                className={`px-3 py-1 rounded font-mono text-xs flex items-center space-x-1.5 transition-all ${
-                  viewMode === '3D'
-                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(0,240,255,0.4)]'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-                title="Switch to 3D Horizon View (Key: V)"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span className="flex items-center space-x-1">
-                  <span>3D HORIZON VIEW</span>
-                  <span className="text-[9px] opacity-75 font-mono">[V]</span>
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* Active View Display: 3D Three.js Environment or 2D Tactical Canvas */}
-          {viewMode === '3D' ? (
-            <Lunar3DEnvironment
-              roverPos={roverPos}
-              roverHeading={roverHeading}
-              onRoverUpdate={handleRoverUpdateFrom3D}
-              driveCommand={driveCommand}
-              speedMode={speedMode}
-              isMoving={isMoving}
-              isDrilling={isDrilling}
-              isScanning={isScanning}
-              selectedSite={selectedSite}
-              iceDeposits={iceDepositsRef.current}
-              onFallbackTo2D={() => setViewMode('2D')}
-            />
-          ) : (
-            <div className="hud-panel p-2 rounded-lg border border-cyan-500/30 bg-space-950 relative overflow-hidden">
-              <div className="absolute top-3 left-3 z-10 bg-space-950/80 backdrop-blur border border-slate-700/80 px-2.5 py-1 rounded text-[11px] font-mono text-slate-300 flex items-center space-x-2">
-                <span className={`w-2 h-2 rounded-full ${isInsidePSR ? 'bg-red-500 animate-ping' : 'bg-cyan-400'}`} />
-                <span>ZONE: {isInsidePSR ? 'PERMANENTLY SHADOWED REGION (0.0 W)' : 'SUNLIT SUMMIT CREST'}</span>
-              </div>
-
-              {waypoint && (
-                <div className="absolute top-3 right-3 z-10 bg-cyan-950/90 backdrop-blur border border-cyan-500/80 px-2.5 py-1 rounded text-[11px] font-mono text-cyan-300 flex items-center space-x-2 animate-pulse">
-                  <Navigation className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                  <span>WAYPOINT: [{waypoint.x}, {waypoint.y}]</span>
+      {/* ========================================================= */}
+      {/* 2. OVERLAY HUD CONTAINER (Pointer Events: None) */}
+      {/* ========================================================= */}
+      <div className="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between p-3 overflow-hidden">
+        {/* TOP ROW: Left HUD Column & Top-Right Controls */}
+        <div className="flex items-start justify-between w-full min-h-0">
+          {/* ========================================================= */}
+          {/* A. LEFT COLUMN: QUESTS PANEL + 5 RESOURCE METERS */}
+          {/* ========================================================= */}
+          <div className="flex flex-col gap-2 w-72 max-w-[288px] pointer-events-auto">
+            {/* Quests Panel */}
+            <div className="bg-space-950/85 backdrop-blur-md border border-slate-700/80 rounded-xl p-2.5 shadow-2xl flex flex-col gap-2">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                <div className="flex items-center space-x-2">
+                  <Target className="w-4 h-4 text-cyan-400" />
+                  <span className="font-display font-bold text-sm text-slate-100 tracking-wide">
+                    {isEngineerMode ? 'MISSION OBJECTIVES' : 'EXPEDITION QUESTS'}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-xs font-mono font-bold text-cyan-300 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/40">
+                    {completedQuestsCount}/4
+                  </span>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setWaypoint(null);
-                      sound.playBeep(450, 0.05);
-                    }}
-                    className="ml-1 text-slate-400 hover:text-white font-bold"
-                    title="Cancel Waypoint"
+                    onClick={() => setIsQuestsCollapsed((prev) => !prev)}
+                    className="p-1 rounded text-slate-400 hover:text-slate-100 cursor-pointer"
+                    title={isQuestsCollapsed ? 'Expand quests' : 'Collapse quests'}
+                    aria-label="Toggle quests view"
                   >
-                    ✕
+                    {isQuestsCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
                   </button>
                 </div>
-              )}
+              </div>
 
-              <canvas
-                ref={canvasRef}
-                onClick={handleCanvasClick}
-                className="w-full h-auto aspect-square rounded border border-slate-800 bg-black cursor-crosshair"
-                title="Click anywhere on terrain to set waypoint autonomous navigation"
+              {/* Quests List */}
+              {isQuestsCollapsed ? (
+                // Compact: Show only current active quest
+                <div className="flex items-center space-x-2 p-1.5 rounded-lg bg-cyan-950/30 border border-cyan-500/40 text-xs">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-bold text-slate-100 block truncate">
+                      {questsData[activeQuestIndex].title}
+                    </span>
+                    <span className="text-slate-400 text-[11px] block truncate">
+                      {questsData[activeQuestIndex].subtext}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                // Expanded: Show all 4 quests
+                <div className="space-y-1.5">
+                  {questsData.map((q, idx) => {
+                    const isActive = idx === activeQuestIndex;
+                    return (
+                      <div
+                        key={q.id}
+                        className={`p-1.5 rounded-lg border transition-all text-xs flex items-start space-x-2 ${
+                          q.done
+                            ? 'bg-emerald-950/25 border-emerald-500/40 text-slate-200'
+                            : isActive
+                              ? 'bg-cyan-950/40 border-cyan-400/70 text-slate-100 shadow-[0_0_10px_rgba(0,240,255,0.2)]'
+                              : 'bg-space-900/40 border-slate-800/80 text-slate-400 opacity-60'
+                        }`}
+                      >
+                        <div className="mt-0.5 flex-shrink-0">
+                          {q.done ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <span
+                              className={`w-4 h-4 rounded-full flex items-center justify-center font-mono text-[10px] font-bold border ${
+                                isActive
+                                  ? 'border-cyan-400 bg-cyan-950 text-cyan-300'
+                                  : 'border-slate-700 bg-space-950 text-slate-400'
+                              }`}
+                            >
+                              {q.id}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0 leading-tight">
+                          <div className={`font-semibold text-[13px] ${q.done ? 'line-through text-slate-400' : isActive ? 'text-cyan-200' : 'text-slate-300'}`}>
+                            {q.title}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            {q.subtext}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Resource StatMeters (5 Stacked Compact Meters) */}
+            <div className="bg-space-950/85 backdrop-blur-md border border-slate-700/80 rounded-xl p-2.5 shadow-2xl flex flex-col gap-2">
+              {/* 1. Sunlight */}
+              <StatMeter
+                label={isEngineerMode ? LABELS.solarGen.engineer : LABELS.solarGen.simple}
+                value={isInsidePSR ? '0 W (Dark Zone)' : `${solarGenWatts} W (${currentIllumination}%)`}
+                percentage={isInsidePSR ? 0 : currentIllumination}
+                status={isInsidePSR ? 'danger' : 'nominal'}
+                icon={<Sun className="w-3.5 h-3.5 text-amber-400" />}
+                tooltipText={LABELS.solarGen.tooltip}
               />
 
-              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 px-2 py-1">
-                <span>Top: Sunlit Rim Crest (+88% Illum)</span>
-                <span className="text-cyan-400/90 font-bold">CLICK CANVAS FOR WAYPOINT NAV</span>
-                <span>Bottom: Cryogenic Cold Trap (-238°C)</span>
-              </div>
+              {/* 2. Battery */}
+              <StatMeter
+                label={isEngineerMode ? LABELS.battery.engineer : LABELS.battery.simple}
+                value={`${batteryPercent}% (${Math.round(batteryWh)} Wh)`}
+                percentage={batteryPercent}
+                status={batteryPercent < 20 ? 'danger' : batteryPercent < 45 ? 'warning' : 'nominal'}
+                icon={<Battery className="w-3.5 h-3.5 text-emerald-400" />}
+                subtext={estimatedMinsLeft}
+                tooltipText={LABELS.battery.tooltip}
+              />
+
+              {/* 3. Temperature */}
+              <StatMeter
+                label={isEngineerMode ? LABELS.coreTemp.engineer : LABELS.coreTemp.simple}
+                value={`${coreTempC}°C`}
+                percentage={Math.max(0, Math.min(100, ((coreTempC - (-235)) / (40 - (-235))) * 100))}
+                status={coreTempC < -80 ? 'danger' : coreTempC < -50 ? 'warning' : 'nominal'}
+                icon={<ThermometerSnowflake className="w-3.5 h-3.5 text-blue-400" />}
+                subtext={
+                  isEngineerMode
+                    ? (coreTempC < -80 ? 'Critical Cold' : coreTempC < -50 ? 'Cryogenic Warning' : 'Nominal Core')
+                    : (coreTempC < -80 ? 'Cold (Freezing Risk)' : coreTempC < -50 ? 'Cooling' : 'Safe (-60°C to +40°C)')
+                }
+                tooltipText={LABELS.coreTemp.tooltip}
+              />
+
+              {/* 4. Signal to Earth */}
+              <StatMeter
+                label={isEngineerMode ? LABELS.comm.engineer : LABELS.comm.simple}
+                value={commTelemetry.marginDb > 0 ? (isEngineerMode ? `+${commTelemetry.marginDb} dB` : 'Strong Link') : 'NO SIGNAL'}
+                percentage={Math.max(0, Math.min(100, (commTelemetry.marginDb / 20) * 100))}
+                status={commTelemetry.marginDb <= 0 ? 'danger' : commTelemetry.marginDb < 5 ? 'warning' : 'nominal'}
+                icon={<Radio className="w-3.5 h-3.5 text-cyan-400" />}
+                tooltipText={LABELS.comm.tooltip}
+              />
+
+              {/* 5. Distance into Dark */}
+              <StatMeter
+                label={isEngineerMode ? LABELS.psrDepth.engineer : LABELS.psrDepth.simple}
+                value={`${depthInPSR} m`}
+                percentage={Math.min(100, (depthInPSR / 600) * 100)}
+                status={depthInPSR > 400 ? 'warning' : 'info'}
+                icon={<Compass className="w-3.5 h-3.5 text-purple-400" />}
+                subtext={`Max: ${maxDepthExplored} m`}
+                tooltipText={LABELS.psrDepth.tooltip}
+              />
             </div>
-          )}
+          </div>
+
+          {/* ========================================================= */}
+          {/* B. TOP-RIGHT HUD: Camera, Radar, Help, Settings */}
+          {/* ========================================================= */}
+          <div className="relative flex flex-col items-end gap-2 pointer-events-auto">
+            {/* Control Bar */}
+            <div className="flex items-center space-x-1.5 bg-space-950/85 backdrop-blur-md border border-slate-700/80 p-1.5 rounded-xl shadow-2xl">
+              {/* Camera Mode Pills */}
+              <div className="flex items-center space-x-1 pr-1.5 border-r border-slate-800">
+                <button
+                  onClick={() => setCameraMode('CHASE')}
+                  className={`px-2.5 py-1 rounded font-mono text-xs transition-all cursor-pointer ${
+                    cameraMode === 'CHASE'
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.4)]'
+                      : 'text-slate-400 hover:text-slate-100'
+                  }`}
+                  title="Chase camera: Follow rover directly [C]"
+                >
+                  CHASE
+                </button>
+                <button
+                  onClick={() => setCameraMode('ORBIT')}
+                  className={`px-2.5 py-1 rounded font-mono text-xs transition-all cursor-pointer ${
+                    cameraMode === 'ORBIT'
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.4)]'
+                      : 'text-slate-400 hover:text-slate-100'
+                  }`}
+                  title="Orbit camera: 360° mouse drag [C]"
+                >
+                  ORBIT
+                </button>
+                <button
+                  onClick={() => setCameraMode('PANORAMA')}
+                  className={`px-2.5 py-1 rounded font-mono text-xs transition-all cursor-pointer ${
+                    cameraMode === 'PANORAMA'
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.4)]'
+                      : 'text-slate-400 hover:text-slate-100'
+                  }`}
+                  title="Panorama camera: Wide summit view [C]"
+                >
+                  PANO
+                </button>
+                <button
+                  onClick={() => setResetCameraTrigger((t) => t + 1)}
+                  className="px-2 py-1 rounded font-mono text-xs text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 transition-all border border-amber-500/40 flex items-center space-x-1 cursor-pointer"
+                  title="Reset camera to default view"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>RESET</span>
+                </button>
+              </div>
+
+              {/* Radar Minimap Toggle Button */}
+              <button
+                onClick={() => setIsRadarOpen((prev) => !prev)}
+                className={`p-1.5 rounded-lg border text-xs font-mono flex items-center space-x-1 transition-all cursor-pointer ${
+                  isRadarOpen
+                    ? 'border-cyan-400 bg-cyan-950 text-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.3)]'
+                    : 'border-slate-700 bg-space-900 text-slate-400 hover:text-slate-200'
+                }`}
+                title="Toggle Lunar Radar Minimap [M]"
+              >
+                <Compass className="w-4 h-4 text-cyan-400" />
+                <span className="font-bold">RADAR</span>
+              </button>
+
+              {/* Help Button (?) */}
+              <button
+                onClick={() => setIsHowToPlayOpen(true)}
+                className="p-1.5 rounded-lg border border-slate-700 bg-space-900 text-slate-300 hover:text-cyan-300 hover:border-cyan-400 transition-all cursor-pointer"
+                title="How to Play [?]"
+                aria-label="How to play controls"
+              >
+                <HelpCircle className="w-4 h-4 text-cyan-400" />
+              </button>
+
+              {/* Settings Button (⚙) */}
+              <button
+                onClick={() => setIsSettingsOpen((prev) => !prev)}
+                className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                  isSettingsOpen
+                    ? 'border-cyan-400 bg-cyan-950 text-cyan-300'
+                    : 'border-slate-700 bg-space-900 text-slate-300 hover:text-cyan-300'
+                }`}
+                title="Settings & Subsystems"
+                aria-label="Subsystem controls and finish mission"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Controls Hint Banner (Fades after 10s) */}
+            {showControlsHint && (
+              <div className="bg-space-950/80 backdrop-blur border border-cyan-500/30 px-2.5 py-1 rounded-full text-xs font-mono text-cyan-300 animate-pulse">
+                Press <kbd className="px-1 py-0.5 bg-cyan-950 rounded border border-cyan-400 font-bold">?</kbd> for Controls Guide
+              </div>
+            )}
+
+            {/* Settings Popover */}
+            {isSettingsOpen && (
+              <div className="w-64 bg-space-950/95 backdrop-blur-md border border-slate-700 rounded-xl p-3 shadow-2xl flex flex-col space-y-3 z-30">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                  <span className="font-display font-bold text-xs text-slate-200 tracking-wider">
+                    OPERATIONS & SUBSYSTEMS
+                  </span>
+                  <button
+                    onClick={() => setIsSettingsOpen(false)}
+                    className="text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Thermal Heater Control */}
+                <div>
+                  <div className="text-xs font-mono text-slate-300 mb-1 flex items-center justify-between">
+                    <span>Thermal Heater [H]:</span>
+                    <span className="text-cyan-400 font-bold">{heaterMode}</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 bg-space-900 p-1 rounded-lg border border-slate-800">
+                    {['AUTO', 'LOW', 'HIGH', 'OFF'].map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => {
+                          sound.playBeep(750, 0.04);
+                          setHeaterMode(mode);
+                        }}
+                        className={`py-1 text-[11px] font-mono rounded transition-colors cursor-pointer ${
+                          heaterMode === mode
+                            ? 'bg-cyan-500 text-slate-950 font-bold'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Drive Speed Mode */}
+                <div>
+                  <div className="text-xs font-mono text-slate-300 mb-1 flex items-center justify-between">
+                    <span>Drive Speed [V]:</span>
+                    <span className="text-blue-400 font-bold">{speedMode}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 bg-space-900 p-1 rounded-lg border border-slate-800">
+                    {['CAUTIOUS', 'NORMAL', 'DASH'].map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => {
+                          sound.playBeep(750, 0.04);
+                          setSpeedMode(mode);
+                        }}
+                        className={`py-1 text-[11px] font-mono rounded transition-colors cursor-pointer ${
+                          speedMode === mode
+                            ? 'bg-blue-500 text-slate-950 font-bold'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {mode.slice(0, 4)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Finish Mission Button */}
+                <div className="pt-2 border-t border-slate-800">
+                  <Button
+                    variant={roverPos.y < 160 ? 'primary' : 'secondary'}
+                    size="sm"
+                    className="w-full justify-center text-xs"
+                    onClick={() => {
+                      setIsSettingsOpen(false);
+                      setShowFinishConfirm(true);
+                    }}
+                    icon={<CheckCircle2 className="w-4 h-4 text-slate-950" />}
+                  >
+                    <span>CONCLUDE MISSION</span>
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right: Flight Controls & Telemetry Terminal (5 Cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          {/* Tactical Control Pad */}
-          <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/90">
-            <div className="text-xs font-mono text-cyan-400 font-bold mb-3 flex items-center justify-between">
-              <span>ROVER DRIVE & ACTUATORS</span>
-              <div className="flex items-center space-x-2">
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-space-950 border border-slate-700 text-slate-300">KEYS: W A S D / ARROWS</span>
-                <span className="text-slate-400 text-[10px]">HDG: {roverHeading}°</span>
+        {/* BOTTOM ROW: Action Bar (Center) + Mission Log (Right) + Touch Joystick (Left) */}
+        <div className="relative flex items-end justify-between w-full min-h-0 pt-2">
+          {/* Touch Joystick (Left, only rendered if coarse pointer device) */}
+          {isTouchDevice ? (
+            <div className="pointer-events-auto bg-space-950/85 backdrop-blur-md border border-slate-700/80 p-2 rounded-2xl shadow-2xl">
+              <div className="grid grid-cols-3 gap-1 w-28 h-28">
+                <div />
+                <button
+                  onTouchStart={() => setDriveCommand((p) => ({ ...p, forward: true }))}
+                  onTouchEnd={() => setDriveCommand((p) => ({ ...p, forward: false }))}
+                  className="rounded-lg bg-cyan-950 border border-cyan-400/60 text-cyan-300 flex items-center justify-center active:scale-95"
+                >
+                  <ChevronUp className="w-6 h-6" />
+                </button>
+                <div />
+                <button
+                  onTouchStart={() => setDriveCommand((p) => ({ ...p, left: true }))}
+                  onTouchEnd={() => setDriveCommand((p) => ({ ...p, left: false }))}
+                  className="rounded-lg bg-space-900 border border-slate-700 text-slate-200 flex items-center justify-center active:scale-95"
+                >
+                  <RotateCcw className="w-5 h-5 text-cyan-400" />
+                </button>
+                <div />
+                <button
+                  onTouchStart={() => setDriveCommand((p) => ({ ...p, right: true }))}
+                  onTouchEnd={() => setDriveCommand((p) => ({ ...p, right: false }))}
+                  className="rounded-lg bg-space-900 border border-slate-700 text-slate-200 flex items-center justify-center active:scale-95"
+                >
+                  <RotateCw className="w-5 h-5 text-cyan-400" />
+                </button>
+                <div />
+                <button
+                  onTouchStart={() => setDriveCommand((p) => ({ ...p, reverse: true }))}
+                  onTouchEnd={() => setDriveCommand((p) => ({ ...p, reverse: false }))}
+                  className="rounded-lg bg-space-900 border border-slate-700 text-slate-200 flex items-center justify-center active:scale-95"
+                >
+                  <ChevronDown className="w-6 h-6" />
+                </button>
+                <div />
               </div>
             </div>
+          ) : (
+            <div className="w-72" />
+          )}
 
-            {/* Directional Pad */}
-            <div className="grid grid-cols-3 gap-2 max-w-[240px] mx-auto mb-3">
-              <div />
-              <button
-                onMouseDown={() => setDriveCommand((p) => ({ ...p, forward: true }))}
-                onMouseUp={() => setDriveCommand((p) => ({ ...p, forward: false }))}
-                onMouseLeave={() => setDriveCommand((p) => ({ ...p, forward: false }))}
-                onTouchStart={() => setDriveCommand((p) => ({ ...p, forward: true }))}
-                onTouchEnd={() => setDriveCommand((p) => ({ ...p, forward: false }))}
-                onClick={() => handleMove('forward')}
-                className="p-3 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-400/50 hover:border-cyan-300 text-cyan-300 flex flex-col items-center justify-center font-mono text-xs active:scale-95 transition-all shadow-[0_0_12px_rgba(0,240,255,0.2)]"
-                title="Forward Throttle (Hold or Key W/↑)"
+          {/* ========================================================= */}
+          {/* C. SLIM ACTION BAR (Bottom-Center, Min 44px Tap Target) */}
+          {/* ========================================================= */}
+          {SHOW_ACTION_BAR && (
+            <div className="pointer-events-auto flex items-center gap-2 bg-space-950/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 shadow-2xl">
+              {/* 1. Scan Ground [Space] */}
+              <Tooltip text="Scan regolith for water ice deposits (consumes 15 Wh)">
+                <button
+                  onClick={handleScan}
+                  disabled={isScanning || isDrilling}
+                  className="h-11 px-4 rounded-lg font-mono text-sm font-semibold border border-cyan-500/50 bg-cyan-950/50 hover:bg-cyan-900/70 text-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-all cursor-pointer shadow-[0_0_12px_rgba(0,240,255,0.2)]"
+                >
+                  <Search className={`w-4 h-4 text-cyan-400 ${isScanning ? 'animate-spin' : ''}`} />
+                  <span>Scan Ground</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-cyan-900/80 border border-cyan-400/50 text-[11px] text-cyan-200">
+                    Space
+                  </kbd>
+                </button>
+              </Tooltip>
+
+              {/* 2. Drill Sample [E] */}
+              <Tooltip
+                text={
+                  isMoving
+                    ? 'Stop rover movement before drilling'
+                    : batteryWh < 65
+                      ? 'Requires at least 65 Wh battery'
+                      : drillCores >= 4
+                        ? 'All 4 ice samples collected'
+                        : isNearIce
+                          ? 'Extracts rich cryogenic ice core (uses 60 Wh)'
+                          : 'Drill lunar regolith core sample (+25 Science, uses 60 Wh)'
+                }
               >
-                <ChevronUp className="w-5 h-5" />
-                <span className="text-[9px] flex items-center space-x-1">
-                  <span>ADVANCE</span>
-                  <span className="text-[8px] opacity-60">W/↑</span>
-                </span>
-              </button>
-              <div />
+                <button
+                  onClick={handleDrill}
+                  disabled={isDrilling || isScanning || isMoving || batteryWh < 65 || drillCores >= 4}
+                  className="h-11 px-4 rounded-lg font-mono text-sm font-semibold border border-amber-500/50 bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2 transition-all cursor-pointer shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+                >
+                  <Crosshair className={`w-4 h-4 text-amber-400 ${isDrilling ? 'animate-bounce' : ''}`} />
+                  <span>Drill Sample</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-amber-900/80 border border-amber-400/50 text-[11px] text-amber-200">
+                    E
+                  </kbd>
+                </button>
+              </Tooltip>
 
-              <button
-                onMouseDown={() => setDriveCommand((p) => ({ ...p, left: true }))}
-                onMouseUp={() => setDriveCommand((p) => ({ ...p, left: false }))}
-                onMouseLeave={() => setDriveCommand((p) => ({ ...p, left: false }))}
-                onTouchStart={() => setDriveCommand((p) => ({ ...p, left: true }))}
-                onTouchEnd={() => setDriveCommand((p) => ({ ...p, left: false }))}
-                onClick={() => handleTurn(-30)}
-                className="p-3 rounded-lg bg-space-900 hover:bg-space-800 border border-slate-700 text-slate-200 flex flex-col items-center justify-center font-mono text-xs active:scale-95 transition-all"
-                title="Steer Left (Hold or Key A/←)"
-              >
-                <RotateCcw className="w-4 h-4 text-cyan-400 mb-0.5" />
-                <span className="text-[9px] flex items-center space-x-1">
-                  <span>STEER L</span>
-                  <span className="text-[8px] opacity-60">A/←</span>
-                </span>
-              </button>
-
-              <button
-                onMouseDown={() => setDriveCommand((p) => ({ ...p, reverse: true }))}
-                onMouseUp={() => setDriveCommand((p) => ({ ...p, reverse: false }))}
-                onMouseLeave={() => setDriveCommand((p) => ({ ...p, reverse: false }))}
-                onTouchStart={() => setDriveCommand((p) => ({ ...p, reverse: true }))}
-                onTouchEnd={() => setDriveCommand((p) => ({ ...p, reverse: false }))}
-                onClick={() => handleMove('reverse')}
-                className="p-3 rounded-lg bg-space-900 hover:bg-space-800 border border-slate-700 text-slate-200 flex flex-col items-center justify-center font-mono text-xs active:scale-95 transition-all"
-                title="Reverse / Brake (Hold or Key S/↓)"
-              >
-                <ChevronDown className="w-5 h-5" />
-                <span className="text-[9px] flex items-center space-x-1">
-                  <span>RETREAT</span>
-                  <span className="text-[8px] opacity-60">S/↓</span>
-                </span>
-              </button>
-
-              <button
-                onMouseDown={() => setDriveCommand((p) => ({ ...p, right: true }))}
-                onMouseUp={() => setDriveCommand((p) => ({ ...p, right: false }))}
-                onMouseLeave={() => setDriveCommand((p) => ({ ...p, right: false }))}
-                onTouchStart={() => setDriveCommand((p) => ({ ...p, right: true }))}
-                onTouchEnd={() => setDriveCommand((p) => ({ ...p, right: false }))}
-                onClick={() => handleTurn(30)}
-                className="p-3 rounded-lg bg-space-900 hover:bg-space-800 border border-slate-700 text-slate-200 flex flex-col items-center justify-center font-mono text-xs active:scale-95 transition-all"
-                title="Steer Right (Hold or Key D/→)"
-              >
-                <RotateCw className="w-4 h-4 text-cyan-400 mb-0.5" />
-                <span className="text-[9px] flex items-center space-x-1">
-                  <span>STEER R</span>
-                  <span className="text-[8px] opacity-60">D/→</span>
-                </span>
-              </button>
-            </div>
-
-            {/* Functional Wait for Sun / Solar Recharge Action */}
-            <div className="mb-3">
-              <button
-                onClick={handleWaitSolarRecharge}
-                disabled={isMoving || isScanning || isDrilling}
-                className={`w-full p-2.5 rounded border font-mono text-xs flex items-center justify-center space-x-2 transition-all ${
+              {/* 3. Recharge in Sun [R] */}
+              <Tooltip
+                text={
                   isInsidePSR
-                    ? 'border-red-900/60 bg-red-950/20 text-red-400 hover:bg-red-950/40'
-                    : 'border-yellow-500/50 bg-yellow-950/40 hover:bg-yellow-900/60 text-yellow-300 shadow-[0_0_12px_rgba(234,179,8,0.2)]'
-                }`}
-                title={isInsidePSR ? 'Zero solar flux inside PSR' : 'Rest on sunlit rim to recharge batteries and normalize temperature'}
+                    ? 'Cannot recharge: 0.0 W solar flux in Dark Zone!'
+                    : batteryPercent >= 100
+                      ? 'Battery storage is already at 100%'
+                      : isMoving
+                        ? 'Stop rover to orient solar panels'
+                        : 'Dwell 20 min in sunlight to recharge battery and warm avionics'
+                }
               >
-                <Sun className={`w-4 h-4 ${isInsidePSR ? 'text-red-400' : 'text-yellow-400'}`} />
-                <span className="font-bold">WAIT FOR SUN / SOLAR RECHARGE</span>
-              </button>
-            </div>
-
-            {/* Science Actions */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button
-                onClick={handleScan}
-                disabled={isScanning || isDrilling}
-                className="p-2.5 rounded border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 font-mono text-xs flex items-center justify-center space-x-1.5 transition-all"
-                title="Keyboard: Spacebar"
-              >
-                <Search className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-                <span>{isScanning ? 'SCANNING...' : 'SCAN REGOLITH [SPACE]'}</span>
-              </button>
-
-              <button
-                onClick={handleDrill}
-                disabled={isDrilling || isScanning}
-                className="p-2.5 rounded border border-amber-500/40 bg-amber-950/30 hover:bg-amber-900/50 text-amber-300 font-mono text-xs flex items-center justify-center space-x-1.5 transition-all"
-                title="Keyboard: E or R"
-              >
-                <Crosshair className={`w-3.5 h-3.5 ${isDrilling ? 'animate-bounce' : ''}`} />
-                <span>{isDrilling ? 'DRILLING...' : 'TRIDENT DRILL [E]'}</span>
-              </button>
-            </div>
-
-            {/* Subsystem Toggles: Heater & Speed Mode */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800 text-[11px] font-mono">
-              <div>
-                <span className="text-slate-400 block mb-1">Thermal Heater:</span>
-                <div className="flex rounded border border-slate-700 overflow-hidden">
-                  {['AUTO', 'LOW', 'HIGH', 'OFF'].map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => {
-                        sound.playBeep(750, 0.04);
-                        setHeaterMode(mode);
-                      }}
-                      className={`flex-1 py-1 text-[10px] transition-colors ${
-                        heaterMode === mode ? 'bg-cyan-500 text-slate-950 font-bold' : 'bg-space-950 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <span className="text-slate-400 block mb-1">Drive Speed:</span>
-                <div className="flex rounded border border-slate-700 overflow-hidden">
-                  {['CAUTIOUS', 'NORMAL', 'DASH'].map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => {
-                        sound.playBeep(750, 0.04);
-                        setSpeedMode(mode);
-                      }}
-                      className={`flex-1 py-1 text-[10px] transition-colors ${
-                        speedMode === mode ? 'bg-blue-500 text-slate-950 font-bold' : 'bg-space-950 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {mode.slice(0, 4)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Science Harvest Cargo Manifest */}
-          <div className="hud-panel p-3.5 rounded-lg border border-slate-700 bg-space-900/70">
-            <div className="text-xs font-mono text-emerald-400 font-bold mb-2 flex items-center justify-between">
-              <span className="flex items-center space-x-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>SCIENCE HARVEST MANIFEST</span>
-              </span>
-              <span className="text-cyan-300 font-bold">{sciencePoints} PTS</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono">
-              <div className="p-2 rounded bg-space-950 border border-slate-800">
-                <span className="text-slate-400 text-[10px] block">Water Ice</span>
-                <span className="text-cyan-300 font-bold">{waterIceKg} kg</span>
-              </div>
-              <div className="p-2 rounded bg-space-950 border border-slate-800">
-                <span className="text-slate-400 text-[10px] block">Drill Cores</span>
-                <span className="text-emerald-300 font-bold">{drillCores} / 4</span>
-              </div>
-              <div className="p-2 rounded bg-space-950 border border-slate-800">
-                <span className="text-slate-400 text-[10px] block">Max Depth</span>
-                <span className="text-blue-300 font-bold">{maxDepthExplored} m</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Live Telemetry Action Log */}
-          <div className="hud-panel p-3 rounded-lg border border-slate-700 bg-space-950/80">
-            <div className="text-[10px] font-mono text-slate-400 mb-1.5 flex items-center justify-between">
-              <span>TELEMETRY COMM LINK LOG</span>
-              <span className="text-cyan-400">DOWNLINK ACTIVE</span>
-            </div>
-            <div className="space-y-1 max-h-28 overflow-y-auto font-mono text-[11px] pr-1">
-              {logs.map((log) => (
-                <div
-                  key={log.id}
-                  className={`leading-tight ${
-                    log.type === 'danger'
-                      ? 'text-red-400'
-                      : log.type === 'warning'
-                      ? 'text-amber-300'
-                      : log.type === 'success'
-                      ? 'text-emerald-300'
-                      : 'text-slate-300'
+                <button
+                  onClick={handleWaitSolarRecharge}
+                  disabled={isInsidePSR || isMoving || isScanning || isDrilling || batteryPercent >= 100}
+                  className={`h-11 px-4 rounded-lg font-mono text-sm font-semibold border flex items-center space-x-2 transition-all cursor-pointer ${
+                    isInsidePSR || batteryPercent >= 100
+                      ? 'border-red-900/50 bg-red-950/20 text-red-400 opacity-50 cursor-not-allowed'
+                      : 'border-yellow-500/60 bg-yellow-950/40 hover:bg-yellow-900/60 text-yellow-300 shadow-[0_0_12px_rgba(234,179,8,0.25)]'
                   }`}
                 >
-                  <span className="text-slate-500 text-[9px] mr-1.5">[{log.time || 'T+0'}]</span>
-                  {log.text}
+                  <Sun className={`w-4 h-4 ${isInsidePSR ? 'text-red-400' : 'text-yellow-400'}`} />
+                  <span>Recharge</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-yellow-900/80 border border-yellow-400/50 text-[11px] text-yellow-200">
+                    R
+                  </kbd>
+                </button>
+              </Tooltip>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* D. MISSION LOG & COACH (Bottom-Right, ~340px Wide) */}
+          {/* ========================================================= */}
+          <div className="pointer-events-auto w-[340px] max-h-[180px] bg-space-950/85 backdrop-blur-md border border-slate-700/80 rounded-xl p-2.5 shadow-2xl flex flex-col justify-between">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-1 mb-1 shrink-0">
+              <div className="flex items-center space-x-1.5">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="font-display font-bold text-xs text-slate-200 tracking-wider">
+                  MISSION LOG // COACH
+                </span>
+              </div>
+              <button
+                onClick={() => setIsLogModalOpen(true)}
+                className="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+              >
+                Full log
+              </button>
+            </div>
+
+            {/* Live Message Feed (Latest 3-4 Messages) */}
+            <div
+              ref={logContainerRef}
+              role="log"
+              aria-live="polite"
+              className="flex-1 overflow-y-auto space-y-1 font-mono text-xs pr-1 max-h-28"
+            >
+              {logs.slice(-4).map((log) => (
+                <div
+                  key={log.id}
+                  className={`leading-tight py-0.5 ${
+                    log.type === 'danger'
+                      ? 'text-red-300'
+                      : log.type === 'warning'
+                        ? 'text-amber-300'
+                        : log.type === 'success'
+                          ? 'text-emerald-300'
+                          : log.type === 'tip'
+                            ? 'text-cyan-200'
+                            : 'text-slate-300'
+                  }`}
+                >
+                  <span className="text-slate-500 text-[10px] mr-1.5">[{log.time || 'T+0'}]</span>
+                  <span>{log.text}</span>
                 </div>
               ))}
             </div>
           </div>
-
-          {/* Mission Conclusion CTA */}
-          <button
-            onClick={handleDeclareCompletion}
-            className="w-full py-3 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-slate-950 font-display font-bold text-sm tracking-wider shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all transform hover:-translate-y-0.5 flex items-center justify-center space-x-2"
-          >
-            <CheckCircle2 className="w-4 h-4 text-slate-950" />
-            <span>TRANSMIT SCIENCE & CONCLUDE MISSION</span>
-          </button>
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* 3. MODALS & DIALOGS */}
+      {/* ========================================================= */}
 
       {/* Emergency Event Modal */}
       {activeEmergency && (
@@ -1409,6 +1395,152 @@ export default function SimulationScreen({
           onResolve={handleResolveEmergency}
         />
       )}
+
+      {/* Finish Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showFinishConfirm}
+        title="Conclude Lunar Surface Operations?"
+        message={
+          roverPos.y < 160
+            ? 'Your rover is safely stationed on the sunlit summit rim with all collected ice samples. Ready to transmit scientific telemetry and debrief with NASA?'
+            : `Your rover is currently ${depthInPSR} meters deep inside the cryogenic Dark Zone. If you conclude now, the rover will remain in the dark with reduced recovery bonus. Do you wish to proceed?`
+        }
+        confirmText="Conclude Mission"
+        cancelText="Keep Exploring"
+        variant={roverPos.y < 160 ? 'primary' : 'danger'}
+        onConfirm={handleConfirmFinish}
+        onCancel={() => setShowFinishConfirm(false)}
+      />
+
+      {/* How to Play Modal (Auto-opens on first entry & accessible via '?') */}
+      <Modal
+        isOpen={isHowToPlayOpen}
+        onClose={closeHowToPlay}
+        title="OPERATION COLD TRAP — HOW TO PLAY"
+        size="md"
+      >
+        <div className="space-y-4 font-sans text-sm text-slate-300">
+          <p className="text-slate-200 leading-relaxed">
+            Your mission is to pilot the rover from the sunny summit ridge into the freezing Dark Zone crater, locate water ice deposits, extract drill samples, and return safely to the sunny rim before your battery depletes.
+          </p>
+
+          <div className="border border-slate-800 rounded-xl bg-space-950 p-3">
+            <h4 className="font-display font-bold text-sm text-cyan-300 mb-2">
+              KEYBOARD & CONTROLS
+            </h4>
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Drive Rover</span>
+                <span className="text-cyan-300 font-bold">W / A / S / D or Arrows</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Scan for Ice</span>
+                <span className="text-cyan-300 font-bold">Space</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Drill Sample</span>
+                <span className="text-cyan-300 font-bold">E</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Solar Recharge</span>
+                <span className="text-cyan-300 font-bold">R</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Heater Mode</span>
+                <span className="text-cyan-300 font-bold">H</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Drive Speed</span>
+                <span className="text-cyan-300 font-bold">V</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Camera View</span>
+                <span className="text-cyan-300 font-bold">C</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Minimap Radar</span>
+                <span className="text-cyan-300 font-bold">M</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Controls Help</span>
+                <span className="text-cyan-300 font-bold">?</span>
+              </div>
+              <div className="flex items-center justify-between p-1.5 rounded bg-space-900 border border-slate-800">
+                <span className="text-slate-400">Close / Cancel</span>
+                <span className="text-cyan-300 font-bold">Esc</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-display font-bold text-sm text-amber-300">
+              3 SURVIVAL RULES
+            </h4>
+            <div className="flex items-start space-x-2 text-xs">
+              <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-400 text-cyan-300 flex items-center justify-center font-bold shrink-0">1</span>
+              <span><strong>Solar is 0.0 W in the dark.</strong> When you cross the glowing yellow line, your battery is your only power.</span>
+            </div>
+            <div className="flex items-start space-x-2 text-xs">
+              <span className="w-5 h-5 rounded-full bg-amber-950 border border-amber-400 text-amber-300 flex items-center justify-center font-bold shrink-0">2</span>
+              <span><strong>Watch temperature.</strong> Keep heaters on to prevent cryogenic cold-weld freezing below -80°C.</span>
+            </div>
+            <div className="flex items-start space-x-2 text-xs">
+              <span className="w-5 h-5 rounded-full bg-emerald-950 border border-emerald-400 text-emerald-300 flex items-center justify-center font-bold shrink-0">3</span>
+              <span><strong>Escape before 0%.</strong> Always leave enough energy to drive back up to the sunny ridge.</span>
+            </div>
+          </div>
+
+          <Button
+            variant="primary"
+            size="md"
+            className="w-full justify-center mt-2 cursor-pointer"
+            onClick={closeHowToPlay}
+          >
+            <span>UNDERSTOOD — LET'S EXPLORE</span>
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Full Telemetry Log Modal */}
+      <Modal
+        isOpen={isLogModalOpen}
+        onClose={() => setIsLogModalOpen(false)}
+        title="MISSION TELEMETRY & EVENT LOG"
+        size="lg"
+      >
+        <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-2 font-mono text-xs">
+          {logs.map((log) => (
+            <div
+              key={log.id}
+              className={`p-2 rounded-lg border leading-relaxed ${
+                log.type === 'danger'
+                  ? 'bg-red-950/40 border-red-500/40 text-red-200'
+                  : log.type === 'warning'
+                    ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                    : log.type === 'success'
+                      ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
+                      : log.type === 'tip'
+                        ? 'bg-cyan-950/40 border-cyan-500/40 text-cyan-200'
+                        : 'bg-space-950 border-slate-800 text-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px] text-slate-500 mb-0.5">
+                <span>{log.time || 'T+0m'}</span>
+                <span className="uppercase tracking-wider">{log.type}</span>
+              </div>
+              <div>{log.text}</div>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* Toast Notifications */}
+      <Toast
+        isOpen={toast.isOpen}
+        message={toast.message}
+        variant={toast.variant}
+        onClose={() => setToast((t) => ({ ...t, isOpen: false }))}
+      />
     </div>
   );
 }

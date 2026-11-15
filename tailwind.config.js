@@ -1,3 +1,5 @@
+import { tokens } from './src/design/tokens.js';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -7,6 +9,18 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Semantic Tokens
+        primary: tokens.colors.primary,
+        success: tokens.colors.success,
+        warning: tokens.colors.warning,
+        danger: tokens.colors.danger,
+        info: tokens.colors.info,
+        surface: tokens.colors.surface,
+        'text-1': tokens.colors.text[1],
+        'text-2': tokens.colors.text[2],
+        'text-3': tokens.colors.text[3],
+
+        // Heritage space palette preserved
         space: {
           950: '#030712',
           900: '#070b18',
@@ -24,9 +38,15 @@ export default {
           ice: '#93c5fd'
         }
       },
+      maxWidth: {
+        narrow: tokens.layout.narrow,
+        default: tokens.layout.default,
+        wide: tokens.layout.wide,
+      },
       fontFamily: {
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
+        display: ['Chakra Petch', 'system-ui', 'sans-serif'],
       },
       animation: {
         'pulse-glow': 'pulseGlow 2.5s infinite ease-in-out',

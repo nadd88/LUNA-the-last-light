@@ -1,25 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
-  Activity, 
   Battery, 
   Sun, 
-  Thermometer, 
-  Radio, 
-  Zap, 
   Play, 
-  Cpu, 
-  ShieldCheck, 
-  TrendingUp, 
   ArrowRight,
-  Database,
-  Satellite,
-  Wifi,
-  Clock,
-  Compass,
-  CheckCircle2
+  CheckCircle2,
+  Zap,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
-import { ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { sound } from '../../utils/sound';
+import Button from '../common/Button';
+import Badge from '../common/Badge';
+import StageHeader from '../common/StageHeader';
+import Callout from '../common/Callout';
 
 export default function MissionControlScreen({
   roverConfig,
@@ -27,244 +21,165 @@ export default function MissionControlScreen({
   onLaunchSurfaceOps,
   onBack
 }) {
-  // Generate baseline telemetry trend data
-  const [telemetryHistory] = useState([
-    { minute: 0, powerGen: roverConfig.peakSolarGen, powerDraw: roverConfig.totalBasePowerDraw, batterySoC: 100, coreTemp: -35 },
-    { minute: 5, powerGen: roverConfig.peakSolarGen, powerDraw: roverConfig.totalBasePowerDraw, batterySoC: 100, coreTemp: -34 },
-    { minute: 10, powerGen: roverConfig.peakSolarGen, powerDraw: roverConfig.totalBasePowerDraw, batterySoC: 99, coreTemp: -35 },
-    { minute: 15, powerGen: roverConfig.peakSolarGen, powerDraw: roverConfig.totalBasePowerDraw, batterySoC: 100, coreTemp: -36 }
-  ]);
+  const netDaylightWatts = roverConfig.peakSolarGen - roverConfig.totalBasePowerDraw;
+  const darkDrawWatts = Math.round(
+    ((roverConfig.chassis?.drivePower || 55) * 0.4) + 
+    (roverConfig.thermal?.powerDraw || 35) + 
+    (roverConfig.comm?.powerDraw || 15)
+  );
 
   return (
-    <div className="relative z-10 max-w-6xl mx-auto px-4 py-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 pb-3 border-b border-cyan-500/20 gap-2">
-        <div>
-          <div className="text-[11px] font-mono text-cyan-400 tracking-wider flex items-center space-x-1.5">
-            <Activity className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-            <span>STAGE 03 // MISSION CONTROL TELEMETRY CONSOLE</span>
-          </div>
-          <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-100 tracking-wide mt-1">
-            FLIGHT SYSTEM HEALTH & PRE-DESCENT STATUS
-          </h2>
-        </div>
-        <div className="text-xs font-mono text-slate-400 flex items-center space-x-2 bg-space-950/80 px-3 py-1.5 rounded-lg border border-slate-800">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
-          <span>DSN CARRIER LOCKED // DSS-14 GOLDSTONE 70M</span>
-        </div>
-      </div>
+    <div className="h-full w-full flex flex-col justify-between max-w-5xl mx-auto px-4 py-2 select-none">
+      {/* 1. StageHeader */}
+      <StageHeader
+        stepNumber={4}
+        totalSteps={6}
+        title="Mission Control: Final Pre-Descent Check"
+        goal={`All systems verified on the rim of ${selectedSite?.name || 'the landing site'}. Review checklist before driving.`}
+      />
 
-      {/* DSN Tracking & Orbital Carrier Banner */}
-      <div className="hud-panel p-3.5 rounded-lg border border-cyan-500/30 bg-space-950/80 mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-        <div>
-          <span className="text-slate-400 block text-[10px]">UPLINK FREQ</span>
-          <span className="text-cyan-300 font-bold">7.190 GHz (X-Band)</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">SIGNAL-TO-NOISE</span>
-          <span className="text-emerald-400 font-bold">+31.8 dB (NOMINAL)</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">ONE-WAY LIGHT TIME</span>
-          <span className="text-slate-200 font-bold">1.284 seconds</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">ORBITAL EPHEMERIS</span>
-          <span className="text-cyan-300 font-bold">LRO POLAR 50KM PASS</span>
-        </div>
-      </div>
-
-      {/* Top Real-Time Vital Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <div className="hud-panel p-3.5 rounded-lg border border-cyan-500/30 bg-space-900/80">
-          <div className="flex items-center space-x-1 text-slate-400 font-mono text-xs mb-1">
-            <Sun className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Daylight Power Gen</span>
-          </div>
-          <div className="text-xl font-mono font-bold text-cyan-300">
-            {roverConfig.peakSolarGen} W
-          </div>
-          <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            Sun Elevation: 1.8° Grazing
-          </div>
-        </div>
-
-        <div className="hud-panel p-3.5 rounded-lg border border-cyan-500/30 bg-space-900/80">
-          <div className="flex items-center space-x-1 text-slate-400 font-mono text-xs mb-1">
-            <Battery className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Storage Capacity</span>
-          </div>
-          <div className="text-xl font-mono font-bold text-emerald-300">
-            {roverConfig.battery.capacity} Wh
-          </div>
-          <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            Core State of Charge: 100%
-          </div>
-        </div>
-
-        <div className="hud-panel p-3.5 rounded-lg border border-cyan-500/30 bg-space-900/80">
-          <div className="flex items-center space-x-1 text-slate-400 font-mono text-xs mb-1">
-            <Thermometer className="w-3.5 h-3.5 text-amber-400" />
-            <span>Avionics Temp</span>
-          </div>
-          <div className="text-xl font-mono font-bold text-amber-300">
-            -35.0 °C
-          </div>
-          <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            Margin: +140°C above limit
-          </div>
-        </div>
-
-        <div className="hud-panel p-3.5 rounded-lg border border-cyan-500/30 bg-space-900/80">
-          <div className="flex items-center space-x-1 text-slate-400 font-mono text-xs mb-1">
-            <Radio className="w-3.5 h-3.5 text-blue-400" />
-            <span>Downlink Rate</span>
-          </div>
-          <div className="text-xl font-mono font-bold text-blue-300">
-            {roverConfig.comm.bandwidth} kbps
-          </div>
-          <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            Link Margin: +14.2 dB
-          </div>
-        </div>
-      </div>
-
-      {/* Center Layout: Recharts Telemetry Graph & Subsystem Matrix */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
-        {/* Left Telemetry Graphs (7 Cols) */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/80">
-            <div className="flex items-center justify-between text-xs font-mono text-slate-300 mb-3">
-              <span className="flex items-center space-x-2">
-                <span className="w-2 h-2 rounded bg-cyan-400" />
-                <span className="font-bold">POWER HARVEST VS CONSUMPTION TELEMETRY (WATTS)</span>
+      {/* 2. Main 2-Column Layout (No page scroll) */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 overflow-hidden my-auto items-stretch">
+        {/* Left Column: Readiness Checklist + Warning Callout (6 Cols) */}
+        <div className="lg:col-span-6 flex flex-col justify-between gap-2.5 min-h-0">
+          <div className="hud-panel p-3.5 rounded-xl border border-cyan-500/30 bg-space-900/80 flex-1 flex flex-col justify-between">
+            <div className="flex items-center justify-between border-b border-slate-700/60 pb-2 mb-2">
+              <span className="font-display font-bold text-sm text-slate-100 flex items-center space-x-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>FLIGHT READINESS CHECKLIST</span>
               </span>
-              <span className="text-[10px] text-cyan-400">T-0 Baseline Check</span>
+              <Badge variant="success">READY FOR DESCENT</Badge>
             </div>
 
-            <div className="h-44 w-full bg-space-950/80 rounded border border-slate-800 p-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={telemetryHistory}>
-                  <XAxis dataKey="minute" stroke="#64748b" fontSize={10} tickFormatter={(m) => `T+${m}m`} />
-                  <YAxis stroke="#64748b" fontSize={10} domain={[0, 260]} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#070b18', borderColor: '#00f0ff', fontSize: '11px', fontFamily: 'monospace' }}
-                  />
-                  <Line type="monotone" dataKey="powerGen" name="Solar Gen (W)" stroke="#00f0ff" strokeWidth={2.5} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="powerDraw" name="Avionics Draw (W)" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-2">
-              <span className="text-cyan-400 font-bold">● Cyan: Solar Array Input ({roverConfig.peakSolarGen}W)</span>
-              <span className="text-amber-400 font-bold">● Amber: Base Power Load ({roverConfig.totalBasePowerDraw}W)</span>
+            <div className="space-y-2 text-xs font-mono flex-1 flex flex-col justify-around">
+              {/* Check 1: Chassis */}
+              <div className="flex items-center justify-between p-2 rounded-lg bg-space-950/80 border border-slate-800">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-slate-100 font-bold truncate">1. Chassis: {roverConfig.chassis.name.split(' ')[0]}</span>
+                </div>
+                <span className="text-slate-400 shrink-0">${roverConfig.chassis.cost}M · {roverConfig.chassis.mass}kg</span>
+              </div>
+
+              {/* Check 2: Battery */}
+              <div className="flex items-center justify-between p-2 rounded-lg bg-space-950/80 border border-slate-800">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-slate-100 font-bold truncate">2. Battery: {roverConfig.battery.name.split(' (')[0]}</span>
+                </div>
+                <span className="text-emerald-400 font-bold shrink-0">{roverConfig.battery.capacity} Wh</span>
+              </div>
+
+              {/* Check 3: Thermal */}
+              <div className="flex items-center justify-between p-2 rounded-lg bg-space-950/80 border border-slate-800">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-slate-100 font-bold truncate">3. Thermal: {roverConfig.thermal.name.split(' (')[0]}</span>
+                </div>
+                <span className="text-amber-400 font-bold shrink-0">{roverConfig.thermal.heatOutput}W Heat</span>
+              </div>
+
+              {/* Check 4: Included Subsystems Line */}
+              <div className="flex items-center justify-between p-2 rounded-lg bg-cyan-950/40 border border-cyan-500/30">
+                <div className="flex items-center space-x-2">
+                  <Check className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <span className="text-cyan-200 font-bold font-sans text-xs">Included: Solar panels · Radio · Science tools</span>
+                </div>
+                <span className="text-cyan-400 font-bold shrink-0">Standard</span>
+              </div>
             </div>
           </div>
 
-          <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/80">
-            <div className="text-xs font-mono text-cyan-400 font-bold mb-2 flex items-center space-x-2">
-              <Compass className="w-3.5 h-3.5 text-cyan-400" />
-              <span>MISSION FLIGHT PLAN TRAVERSE BRIEF:</span>
-            </div>
-            <div className="text-xs text-slate-300 space-y-2 leading-relaxed font-mono">
-              <p>
-                1. <strong>Rim Staging:</strong> The rover is currently positioned on the sunlit crest of {selectedSite.name}. All power systems are fully charged.
-              </p>
-              <p>
-                2. <strong>Descent into PSR:</strong> Once descending past the shadow line ({selectedSite.psrDistance} meters away), solar generation immediately collapses to <strong>0.0 Watts</strong>.
-              </p>
-              <p>
-                3. <strong>Prospecting Execution:</strong> Activate the Neutron Spectrometer (NSS) and TRIDENT Drill when approaching suspected volatile traps to sample water ice.
-              </p>
-            </div>
-          </div>
+          {/* Big Bold Warning Callout */}
+          <Callout variant="warning" title="SHADOW LINE = ZERO SOLAR POWER">
+            <p className="text-sm text-slate-100 leading-snug font-sans">
+              Once you cross the shadow boundary, solar drops strictly to 0.0W. You run purely on battery. Monitor charge and return to sunlight before you freeze.
+            </p>
+          </Callout>
         </div>
 
-        {/* Right Subsystem Status Matrix (5 Cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="hud-panel p-4 rounded-lg border border-cyan-500/30 bg-space-900/80">
-            <div className="text-xs font-mono text-cyan-400 font-bold mb-3 flex items-center justify-between">
-              <span>FLIGHT DIRECTOR GO / NO-GO STATUS</span>
-              <span className="text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50">ALL SUBSYSTEMS GO</span>
-            </div>
+        {/* Right Column: Visual Power Comparison (6 Cols) */}
+        <div className="lg:col-span-6 flex flex-col justify-between gap-2.5 min-h-0 hud-panel p-3.5 rounded-xl border border-cyan-500/30 bg-space-900/80">
+          <div>
+            <h3 className="font-display font-bold text-sm text-slate-100 mb-2 flex items-center space-x-2 border-b border-slate-700/60 pb-1.5">
+              <Zap className="w-4 h-4 text-cyan-400" />
+              <span>POWER IN VS. POWER USED (COMPARISON)</span>
+            </h3>
 
-            <div className="space-y-2 text-xs font-mono">
-              <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-slate-200 font-bold">{roverConfig.chassis.name}</div>
-                  <div className="text-[10px] text-slate-400">Mobility • {roverConfig.chassis.slopeCapability}° Slope Limit</div>
-                </div>
-                <span className="badge-pass">GO</span>
+            {/* Sunlight State */}
+            <div className="p-3 rounded-xl bg-space-950/80 border border-cyan-500/30 mb-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-display font-bold text-xs text-cyan-300 flex items-center space-x-1.5">
+                  <Sun className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>ON THE SUNLIT RIM</span>
+                </span>
+                <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/40">
+                  +{netDaylightWatts}W (CHARGING)
+                </span>
               </div>
-
-              <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-slate-200 font-bold">{roverConfig.solar.name}</div>
-                  <div className="text-[10px] text-slate-400">Generation • {roverConfig.solar.generation}W Peak</div>
-                </div>
-                <span className="badge-pass">GO</span>
-              </div>
-
-              <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-slate-200 font-bold">{roverConfig.battery.name}</div>
-                  <div className="text-[10px] text-slate-400">Energy • {roverConfig.battery.capacity} Wh Storage</div>
-                </div>
-                <span className="badge-pass">GO</span>
-              </div>
-
-              <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-slate-200 font-bold">{roverConfig.thermal.name}</div>
-                  <div className="text-[10px] text-slate-400">Thermal • {roverConfig.thermal.heatOutput}W Output</div>
-                </div>
-                <span className="badge-pass">GO</span>
-              </div>
-
-              <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-slate-200 font-bold">{roverConfig.comm.name}</div>
-                  <div className="text-[10px] text-slate-400">Telecom • {roverConfig.comm.dteRange}</div>
-                </div>
-                <span className="badge-pass">GO</span>
-              </div>
-
-              <div className="p-2.5 rounded bg-space-950 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-slate-200 font-bold">Science Suite ({roverConfig.instruments?.length || 0} Instruments)</div>
-                  <div className="text-[10px] text-slate-400">Payload Active</div>
-                </div>
-                <span className="badge-pass">GO</span>
+              <p className="text-sm text-slate-300 mb-1 leading-snug font-sans">
+                Solar generates +{roverConfig.peakSolarGen}W while systems use {roverConfig.totalBasePowerDraw}W. Batteries recharge to 100%.
+              </p>
+              <div className="w-full bg-space-900 h-2 rounded-full overflow-hidden border border-slate-700">
+                <div className="h-full bg-emerald-400 rounded-full" style={{ width: '85%' }} />
               </div>
             </div>
+
+            {/* Darkness State */}
+            <div className="p-3 rounded-xl bg-space-950/80 border border-red-500/40 mb-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-display font-bold text-xs text-red-400 flex items-center space-x-1.5">
+                  <Battery className="w-3.5 h-3.5 text-red-400" />
+                  <span>INSIDE THE DARK CRATER</span>
+                </span>
+                <span className="text-[11px] font-mono font-bold text-red-400 bg-red-950 px-2 py-0.5 rounded border border-red-500/40">
+                  -{darkDrawWatts}W (DRAINING)
+                </span>
+              </div>
+              <p className="text-sm text-slate-300 mb-1 leading-snug font-sans">
+                Solar generation drops to 0.0W. Wheels and heating drain ~{darkDrawWatts}W. You have ~{roverConfig.estimatedSurvivalMinutes || 28} min survival time.
+              </p>
+              <div className="w-full bg-space-900 h-2 rounded-full overflow-hidden border border-slate-700">
+                <div className="h-full bg-red-500 rounded-full" style={{ width: '40%' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Summary Pill */}
+          <div className="p-2 rounded-lg bg-cyan-950/30 border border-cyan-500/30 text-xs font-mono text-cyan-300 flex items-center justify-between">
+            <span>Target Dark Zone Distance:</span>
+            <span className="font-bold">{selectedSite.psrDistance} meters away</span>
           </div>
         </div>
       </div>
 
-      {/* Navigation Buttons */}
-      <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-        <button
+      {/* 3. Footer Action Bar (Fixed height) */}
+      <footer className="shrink-0 h-14 flex items-center justify-between border-t border-slate-800 pt-2 px-1">
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={() => {
             sound.playBeep(700, 0.05);
             onBack();
           }}
-          className="btn-secondary"
         >
           ← Adjust Configuration
-        </button>
+        </Button>
 
-        <button
+        <Button
+          variant="primary"
+          size="md"
           onClick={() => {
             sound.playBeep(980, 0.1);
             onLaunchSurfaceOps();
           }}
-          className="btn-primary flex items-center space-x-2"
+          className="shadow-[0_0_25px_rgba(0,240,255,0.45)] hover:shadow-[0_0_35px_rgba(0,240,255,0.7)]"
+          icon={<Play className="w-4 h-4 text-slate-950 fill-current" />}
+          iconRight={<ArrowRight className="w-4 h-4 text-slate-950" />}
         >
-          <Play className="w-4 h-4 text-slate-950 fill-current" />
-          <span>START SURFACE EXPLORATION</span>
-          <ArrowRight className="w-4 h-4 text-slate-950" />
-        </button>
-      </div>
+          DRIVE ONTO THE MOON
+        </Button>
+      </footer>
     </div>
   );
 }

@@ -1,127 +1,150 @@
-# LUNA: THE LAST LIGHT 🌔
-### NASA Space Apps Challenge 2026 — Lunar South Pole Exploration Simulator
+# 🌕 LUNA: The Last Light
 
-> *"How far into eternal darkness can your rover venture before cold and darkness claim it?"*
+### An Interactive Lunar Exploration Simulation
 
-[![NASA Space Apps Challenge](https://img.shields.io/badge/NASA%20Space%20Apps-2026-00f0ff?style=for-the-badge&logo=nasa)](https://www.spaceappschallenge.org/)
-[![Artemis Program](https://img.shields.io/badge/Artemis-Polar%20Exploration-blue?style=for-the-badge)](https://www.nasa.gov/specials/artemis/)
-[![Vite + React](https://img.shields.io/badge/Vite-React%2018-61dafb?style=for-the-badge&logo=react)](https://vitejs.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS%203.4-38bdf8?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
+Explore the Moon. Make critical decisions. Complete your mission.
+
+LUNA: The Last Light is an interactive lunar exploration game where players experience the challenges of planning and exploring the Moon. Navigate lunar terrain, manage mission resources, avoid hazards, and discover the science behind lunar exploration.
 
 ---
 
-## 🛰️ Product Concept & Overview
+## 🎮 Gameplay Demo
 
-**LUNA: THE LAST LIGHT** is an interactive, browser-based lunar exploration mission simulator built for the **NASA Space Apps Challenge 2026**.
+![LUNA Gameplay Demo](./assets/luna-gif.gif)
 
-Operating near the **Lunar South Pole (89°S to 90°S)** presents one of the most perilous engineering environments in the Solar System. Because the Moon’s rotational axis is tilted by only **1.54°**, the Sun never rises high in the sky; it grazes mountain crests and crater rims at a mere 1.5° to 2.0° above the horizon. Elevated peaks enjoy up to 90% illumination, while deep impact depressions remain in eternal darkness—forming **Permanently Shadowed Regions (PSRs)** where temperatures plummet to **38 Kelvin (-235°C)**.
-
-These cryogenic "cold traps" are the primary targets of the NASA Artemis campaign: they harbor billions of metric tons of ancient water ice and volatile resources crucial for long-term human presence, drinking water, breathable oxygen, and rocket propellant.
-
-The core gameplay loop puts the player in the role of Mission Commander:
-1. **Target Selection**: Analyze real LOLA topographic data and choose an Artemis candidate landing site.
-2. **Payload Engineering**: Build a custom rover balancing **Budget ($160M)**, **Mass (350 kg)**, and **Solar Generation Margin**.
-3. **Telemetry & Descent**: Monitor baseline avionics and launch down the crater wall.
-4. **Surface Operations & The Return Dilemma**: Venture into pitch-black shadow where direct solar power drops strictly to **0.0 Watts**. Manage battery reserves, active resistive heaters, wheel slip, and Earth communication occultation while drilling for cryogenic ice samples.
-5. **Debrief & Forensics**: Receive a comprehensive forensic rating and educational comparison with NASA's VIPER and Artemis III missions.
+*Watch LUNA in action and experience the lunar exploration mission.*
 
 ---
 
-## 🧪 Scientific References & NASA Datasets
+## 🚀 About the Project
 
-The game is directly calibrated using empirical data from NASA Lunar Reconnaissance Orbiter (LRO) and international partner instruments:
+LUNA transforms lunar exploration into an interactive gaming experience. Players take the role of mission planners and explorers, making decisions that influence their mission's progress and success.
 
-| Instrument | Mission | Scientific Application in Game |
-| :--- | :--- | :--- |
-| **LOLA** (Lunar Orbiter Laser Altimeter) | NASA LRO | Topographic elevation profiles, slope hazard ratings, and crater depth contours. |
-| **ShadowCam** | KPLO / NASA | Low-light sensitivity modeling, secondary starlight/earthshine rendering inside PSRs. |
-| **Diviner Radiometer** | NASA LRO | Thermal equilibrium physics: -45°C on illuminated rims vs. -235°C (38K) in cold traps. |
-| **VIPER Science Suite** | NASA CLPS | Neutron Spectrometer (NSS), Near-IR Spectrometer (NIRVSS), and 1-meter TRIDENT drill. |
+Inspired by real lunar exploration missions and NASA science, LUNA combines 3D terrain visualization, exploration challenges, and resource management to make space science more accessible and engaging.
 
-> **Scientific Transparency**: The game clearly distinguishes empirical NASA datasets from simplified interactive gameplay models. In compliance with physics, solar generation inside any designated Permanently Shadowed Region is strictly **0.0 Watts**.
+## ✨ Features
 
----
+- **3D Lunar Environment** — Explore an immersive Moon surface.
+- **Mission Planning** — Review objectives and prepare for lunar exploration.
+- **Landing Site Selection** — Evaluate potential landing locations.
+- **Rover Exploration** — Navigate the lunar surface and explore your surroundings.
+- **Terrain Challenges** — Encounter craters, slopes, and obstacles.
+- **Resource Management** — Make decisions using limited mission resources.
+- **Scientific Exploration** — Discover concepts related to lunar science and exploration.
 
-## 🎮 Gameplay Features & Screens
+## 🕹️ How to Play
 
-1. **Cinematic Launch Pad**: Dynamic starfield, orbital perspective of Earth low on the lunar horizon, synthesized mission control SFX, and quick resume.
-2. **Mission Briefing**: Directives and background on Artemis polar volatile trapping.
-3. **Landing Site Selection**: 5 real NASA candidate locations:
-   - *Shackleton Crater Connecting Ridge* (89.9°S)
-   - *Malapert Mountain Massif* (84.9°S)
-   - *De Gerlache - Shackleton Connecting Ridge* (88.5°S)
-   - *Haworth Deep Depression* (87.4°S)
-   - *Faustini Crater Plateau* (87.3°S)
-   - *Interactive LOLA elevation profiles powered by Recharts.*
-4. **Rover Engineering Suite**:
-   - Chassis: Lightweight Carbon, Rocker-Bogie, or Continuous Tracks.
-   - Power: Body-Mounted PV, Vertical Sun-Tracking Mast, or UltraFlex Wings.
-   - Batteries: Heritage Li-Ion, Cryogenic Solid-State, or Solid-State + RHU.
-   - Thermal: Passive MLI, Active Resistive Heaters, or Phase-Change Wax.
-   - Telecom: Omnidirectional S-Band, Gimbaled X-Band, or Lunar Gateway Relay Link.
-   - Science: NSS Neutron Spectrometer, NIRVSS Infrared Volatiles Sensor, TRIDENT Cryo Drill, and ShadowCam.
-   - Real-time schematic blueprint assembly and engineering trade-off commentary.
-5. **Mission Control Dashboard**: Multi-channel telemetry console with real-time power generation vs. consumption curves, avionics status, and DSN carrier lock.
-6. **Surface Operations Simulation**:
-   - 2D/2.5D topographic canvas with realistic razor-sharp polar shadows.
-   - Interactive rover locomotion, steering, regolith scanning, and TRIDENT drill core sampling.
-   - Lumped-capacitance thermal calculations and battery drain tracking.
-   - Dynamic headlights cutting through dust in 40K pitch darkness.
-7. **Emergency Contingency Scenarios**:
-   - Cryogenic Thermal Shock
-   - Fine Unconsolidated Regolith Wheel Slip
-   - Crater Rim Earth Occultation
-   - High-Yield Subsurface Hydrogen Discovery
-8. **Forensic Debriefing**:
-   - Mission outcome classification (Full Success, Partial Success, Mission Lost).
-   - Letter grade (A+ through F) with point breakdown.
-   - Total kilograms of water ice extracted.
-   - Educational comparison with NASA VIPER and Artemis mission plans.
-   - Export Flight Log (JSON) and clipboard summary share.
+Your mission is to explore the lunar surface and complete your assigned objectives.
 
----
+### Step 1 — Start Your Mission
+Launch LUNA and enter the mission briefing to understand your objectives.
 
-## 🛠️ Technology Stack
+### Step 2 — Select Your Landing Site
+Review the available landing locations and choose a suitable site based on the terrain and potential hazards.
 
-- **Framework**: React 18
-- **Build Tool**: Vite 5
-- **Styling**: Tailwind CSS 3 with custom HUD overlays and CRT scanlines
-- **Data Visualization**: Recharts (LOLA altimetry profiles and power curves)
-- **Icons**: Lucide React
-- **Audio**: Custom client-side Web Audio API synthesizer (no external audio assets required)
-- **Effects**: canvas-confetti
-- **Storage**: Browser `localStorage` for progress auto-saving and flight log archiving
+### Step 3 — Explore the Moon
+Control your rover and navigate across the lunar surface. Observe your surroundings and avoid obstacles.
 
----
+### Step 4 — Manage Your Resources
+Keep track of your available resources and make careful decisions throughout the mission.
 
-## 🚀 Getting Started
+### Step 5 — Complete Your Objectives
+Explore the assigned locations, complete mission tasks, and review your final mission results.
+
+### Controls
+
+| Action | Control |
+|---|---|
+| Move forward | `W` or `↑ Arrow` |
+| Move backward | `S` or `↓ Arrow` |
+| Move left | `A` or `← Arrow` |
+| Move right | `D` or `→ Arrow` |
+| Camera control | Left Mouse Drag (Orbit) · Right Mouse Drag (Pan) · Scroll Wheel (Zoom) |
+| Interact / Select | `E` or `R` (TRIDENT Drill) · `Spacebar` (Scan Regolith NSS) · Left Click |
+| Pause / Menu | `Esc` (Settings / Help / Emergency Menu) · Top Nav (`NASA Ref`, `Logs`) |
+| Speed Boost / Sprint | `Shift` (Dash Mode) |
+| Camera Perspective | `V` (Toggle 2D / 3D Perspective) |
+
+*Refer to the in-game instructions for the complete controls.*
+
+## 🛰️ NASA Data & Science
+
+LUNA uses NASA resources and lunar science to support its exploration experience.
+
+NASA data and scientific references help inform the game's representation of the lunar environment and exploration challenges.
+
+See the resources below for the datasets and references used in the project:
+
+| NASA Resource | How It Is Used |
+|---|---|
+| [NASA LRO LOLA (Lunar Orbiter Laser Altimeter)](https://lunar.gsfc.nasa.gov/lola/) | Provides digital elevation models (DEMs), slope hazard profiles, and crater depth contours for south polar candidate landing sites (Shackleton Crater, Malapert Mountain, Haworth Depression) and calibrates the 3D procedural terrain mesh. |
+| [NASA LRO Diviner Lunar Radiometer Experiment](https://diviner.ucla.edu/) | Provides surface and subsurface thermal data; calibrates the thermal physics model where temperatures drop to 25 K – 40 K (-248°C to -233°C) in shadowed crater floors vs. ~220 K (-53°C) on illuminated rims. |
+| [NASA ShadowCam / KPLO (Danuri)](https://shadowcam.sese.asu.edu/) | Ultra-sensitive optical imaging of Permanently Shadowed Regions (PSRs) using secondary reflected light; guides visual contrast, regolith albedo, and micro-boulder distribution inside pitch-black cold traps. |
+| [NASA LEND & Lunar Prospector Neutron Spectrometer (LP-NS)](https://science.nasa.gov/mission/lunar-reconnaissance-orbiter/) | Orbital epithermal neutron spectrometry mapping Water-Equivalent Hydrogen (WEH); informs site-level volatile concentrations and drives the rover's Neutron Spectrometer System (NSS) prospecting mechanic. |
+| [NASA LCROSS (Lunar CRater Observation and Sensing Satellite)](https://www.nasa.gov/mission_pages/LCROSS/main/index.html) | Direct ground-truth spectrometer data from the Cabeus crater volatile plume confirming 5.5 ± 1.4 wt% water ice, along with CO₂, NH₃, and light hydrocarbons. |
+| [NASA LRO LROC Narrow Angle Camera (NAC)](https://www.lroc.asu.edu/) | High-resolution (0.5 m/pixel) targeted surface imagery providing geomorphology, traversability corridors, and boulder field distributions for polar landing locations. |
+| [NASA VIPER Science Payload Suite](https://science.nasa.gov/mission/viper/) | Models the rover's scientific prospecting hardware: Neutron Spectrometer System (NSS), Near-Infrared Volatiles Spectrometer System (NIRVSS), and the 1-meter rotary-percussive TRIDENT drill. |
+| [NASA Moon Trek & Planetary Data System (PDS)](https://trek.nasa.gov/moon/) | Archival planetary GIS repository providing polar cartography, georeferenced landing site coordinates, and South Pole-Aitken (SPA) basin boundary data. |
+| [LOLA Solar Illumination Simulations (Mazarico et al., 2011)](https://doi.org/10.1016/j.icarus.2010.10.030) | Published LOLA horizon sun-visibility models enforcing the physical rule that direct solar irradiance is strictly 0.0 W inside geometric cold traps due to the Moon's 1.54° axial tilt. |
+
+*Only list datasets and resources that are actually used in the project.*
+
+## 🛠️ Built With
+
+- **JavaScript** — Game logic and functionality
+- **React** — User interface
+- **Vite** — Development and build tooling
+- **Three.js** — 3D lunar environment and visualization
+- **Git & GitHub** — Version control and collaboration
+
+## 💻 Getting Started
 
 ### Prerequisites
-- Node.js (v18 or higher)
-- npm (v9 or higher)
 
-### Installation & Local Execution
-```bash
-# Clone the repository
-git clone https://github.com/nadd88/LUNA-the-last-light.git
-cd LUNA-the-last-light
+- Node.js
+- npm
+- Git
 
-# Install dependencies
-npm install
+### Installation
 
-# Start the local development server
-npm run dev
+1. Clone the repository:
 
-# Open in browser: http://localhost:5173
-```
+   ```bash
+   git clone https://github.com/nadd88/LUNA.git
+   ```
 
-### Production Build
-```bash
-npm run build
-npm run preview
-```
+2. Navigate to the project directory:
+
+   ```bash
+   cd LUNA
+   ```
+
+3. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+4. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+5. Open the local URL displayed in your terminal.
+
+## 🎯 Our Goal
+
+We aim to make lunar exploration more accessible through interactive gameplay, encouraging curiosity about space science, critical thinking, and interest in STEM.
+
+**Exploration begins with curiosity. The next step is yours.**
 
 ---
 
-## 📜 License
-Developed for the **NASA Space Apps Challenge 2026**. Educational and open-source under the MIT License.
+## 👩‍🚀 Team
+
+Developed by Team LUNA for the NASA Space Apps Challenge.
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE) — open-source and educational for the NASA Space Apps Challenge.

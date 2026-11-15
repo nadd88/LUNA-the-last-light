@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
@@ -48,10 +48,20 @@ export default function Lunar3DEnvironment({
   isScanning,
   selectedSite,
   iceDeposits = [],
-  onFallbackTo2D
+  waypoint = null,
+  onSetWaypoint,
+  onWaypointReached,
+  onFallbackTo2D,
+  isFullScreen = false,
+  hideInternalHUD = false,
+  externalCameraMode,
+  onCameraModeChange,
+  resetCameraTrigger = 0,
+  minimapCollapsed: externalMinimapCollapsed,
+  hideMinimap = false
 }) {
   const mountRef = useRef(null);
-  const [cameraMode, setCameraMode] = useState('ORBIT'); // 'ORBIT' | 'CHASE' | 'PANORAMA'
+  const [cameraMode, setCameraMode] = useState(externalCameraMode || 'ORBIT'); // 'ORBIT' | 'CHASE' | 'PANORAMA'
   const [hasWebGLError, setHasWebGLError] = useState(false);
   const [telemetry, setTelemetry] = useState({
     pitchDeg: 0,
@@ -61,12 +71,27 @@ export default function Lunar3DEnvironment({
     speedMps: '0.0'
   });
 
+  // Sync external camera mode
+  useEffect(() => {
+    if (externalCameraMode && externalCameraMode !== cameraMode) {
+      setCameraMode(externalCameraMode);
+    }
+  }, [externalCameraMode]);
+
   // Live Interactive Lunar Minimap HUD State
   const [minimapZoom, setMinimapZoom] = useState(1.4); // 1.0 (overview) to 2.2 (tactical close-up)
   const [minimapOrientation, setMinimapOrientation] = useState('NORTH'); // 'NORTH' | 'ROVER'
-  const [minimapCollapsed, setMinimapCollapsed] = useState(false);
+  const [minimapCollapsed, setMinimapCollapsed] = useState(externalMinimapCollapsed !== undefined ? externalMinimapCollapsed : false);
+
+  useEffect(() => {
+    if (externalMinimapCollapsed !== undefined) {
+      setMinimapCollapsed(externalMinimapCollapsed);
+    }
+  }, [externalMinimapCollapsed]);
   const minimapCanvasRef = useRef(null);
   const breadcrumbsRef = useRef([]);
+  const lastMinimapDrawTime = useRef(0);
+  const drawMinimapRef = useRef(null);
 
   // State refs for animation loop
   const animFrameIdRef = useRef(null);
@@ -74,6 +99,8 @@ export default function Lunar3DEnvironment({
   const rendererRef = useRef(null);
   const cameraRef = useRef(null);
   const controlsRef = useRef(null);
+  const terrainMeshRef = useRef(null);
+  const waypointBeaconGroupRef = useRef(null);
   const prevRoverFocus = useRef(null);
   const roverGroupRef = useRef(null);
   const bodyGroupRef = useRef(null);
@@ -127,6 +154,12 @@ export default function Lunar3DEnvironment({
     controlsRef.current.update();
   };
 
+  useEffect(() => {
+    if (resetCameraTrigger > 0) {
+      handleResetCamera();
+    }
+  }, [resetCameraTrigger]);
+
   // Dynamic prop refs for renderLoop to read without recreating WebGL context
   const driveCommandRef = useRef(driveCommand);
   useEffect(() => { driveCommandRef.current = driveCommand; }, [driveCommand]);
@@ -142,6 +175,15 @@ export default function Lunar3DEnvironment({
 
   const selectedSiteRef = useRef(selectedSite);
   useEffect(() => { selectedSiteRef.current = selectedSite; }, [selectedSite]);
+
+  const waypointRef = useRef(waypoint);
+  useEffect(() => { waypointRef.current = waypoint; }, [waypoint]);
+
+  const onSetWaypointRef = useRef(onSetWaypoint);
+  useEffect(() => { onSetWaypointRef.current = onSetWaypoint; }, [onSetWaypoint]);
+
+  const onWaypointReachedRef = useRef(onWaypointReached);
+  useEffect(() => { onWaypointReachedRef.current = onWaypointReached; }, [onWaypointReached]);
 
   const cameraModeRef = useRef(cameraMode);
   useEffect(() => {
@@ -176,7 +218,7 @@ export default function Lunar3DEnvironment({
     cameraRef.current = camera;
     camera.position.set(0, 16, 28);
 
-    // 4. Renderer Setup (Optimized for student laptops)
+    // 4. Renderer Setup (High-Fidelity Polar Visuals)
     let renderer;
     try {
       renderer = new THREE.WebGLRenderer({
@@ -185,11 +227,11 @@ export default function Lunar3DEnvironment({
         alpha: false
       });
       renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.1;
+      renderer.toneMappingExposure = 1.15;
       container.appendChild(renderer.domElement);
       rendererRef.current = renderer;
     } catch (e) {
@@ -201,22 +243,22 @@ export default function Lunar3DEnvironment({
 
     // 5. Photorealistic Lunar Lighting (Low-angle grazing polar sunlight + faint secondary Earthshine)
     // Low polar sun angle (~2.4° above horizon) creates dramatic lunar shadows, accentuating micro-relief
-    const ambientLight = new THREE.AmbientLight(0x080f1a, 0.15);
+    const ambientLight = new THREE.AmbientLight(0x080f1a, 0.16);
     scene.add(ambientLight);
 
     const sunLight = new THREE.DirectionalLight(0xfffaed, 3.8);
     sunLight.position.set(55, 12, -180);
     sunLight.target.position.set(0, -10, 0);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.mapSize.width = 4096;
+    sunLight.shadow.mapSize.height = 4096;
     sunLight.shadow.camera.near = 10;
     sunLight.shadow.camera.far = 420;
     sunLight.shadow.camera.left = -125;
     sunLight.shadow.camera.right = 125;
     sunLight.shadow.camera.top = 125;
     sunLight.shadow.camera.bottom = -125;
-    sunLight.shadow.bias = -0.0004;
+    sunLight.shadow.bias = -0.0003;
     scene.add(sunLight);
     scene.add(sunLight.target);
 
@@ -227,7 +269,7 @@ export default function Lunar3DEnvironment({
 
     // 6. Deep Outer Space Starfield
     const starsGeom = new THREE.BufferGeometry();
-    const starCount = 1600;
+    const starCount = 2500;
     const starPositions = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount; i++) {
       const u = Math.random();
@@ -242,10 +284,10 @@ export default function Lunar3DEnvironment({
     starsGeom.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
     const starsMat = new THREE.PointsMaterial({
       color: 0xf1f5f9,
-      size: 1.15,
+      size: 1.25,
       sizeAttenuation: false,
       transparent: true,
-      opacity: 0.88
+      opacity: 0.92
     });
     const starField = new THREE.Points(starsGeom, starsMat);
     scene.add(starField);
@@ -256,7 +298,9 @@ export default function Lunar3DEnvironment({
     earthGroup.position.set(150, 34, -210); // Low on south polar horizon (~4.5° elevation)
 
     const earthTexture = createEarthTexture();
-    const earthGeom = new THREE.SphereGeometry(11.2, 48, 48);
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy() || 16;
+    earthTexture.anisotropy = maxAnisotropy;
+    const earthGeom = new THREE.SphereGeometry(11.2, 64, 64);
     const earthMat = new THREE.MeshStandardMaterial({
       map: earthTexture,
       roughness: 0.65,
@@ -271,7 +315,7 @@ export default function Lunar3DEnvironment({
     earthGroup.add(earthMesh);
 
     // Atmospheric Rayleigh Blue Glow Halo (Standard Three.js Material, 100% bug-free on all GPUs)
-    const haloGeom = new THREE.SphereGeometry(11.6, 32, 32);
+    const haloGeom = new THREE.SphereGeometry(11.6, 64, 64);
     const haloMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
@@ -285,7 +329,7 @@ export default function Lunar3DEnvironment({
     scene.add(earthGroup);
 
     // 8. 3D Lunar Terrain Surface with Procedural Regolith PBR Textures
-    const terrainGridRes = 140; // High-detail smooth terrain mesh (39,200 triangles, optimal for student laptops)
+    const terrainGridRes = 240; // High-definition terrain surface (115,200 detailed facets)
     const terrainGeom = new THREE.PlaneGeometry(300, 300, terrainGridRes, terrainGridRes);
     terrainGeom.rotateX(-Math.PI / 2);
 
@@ -336,6 +380,11 @@ export default function Lunar3DEnvironment({
     const regolithBump = createRegolithBumpTexture();
     const regolithRoughness = createRegolithRoughnessTexture();
 
+    const maxAniso = renderer.capabilities.getMaxAnisotropy() || 16;
+    regolithTexture.anisotropy = maxAniso;
+    regolithBump.anisotropy = maxAniso;
+    regolithRoughness.anisotropy = maxAniso;
+
     const terrainMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       map: regolithTexture,
@@ -348,6 +397,7 @@ export default function Lunar3DEnvironment({
     });
     const terrainMesh = new THREE.Mesh(terrainGeom, terrainMat);
     terrainMesh.receiveShadow = true;
+    terrainMeshRef.current = terrainMesh;
     scene.add(terrainMesh);
 
     // 9. High-Performance Instanced Lunar Boulders & Regolith Rock Fragments
@@ -551,11 +601,12 @@ export default function Lunar3DEnvironment({
     // 13. Responsive Resize Observer
     const handleResize = () => {
       if (!container || !renderer) return;
-      const w = container.clientWidth || 600;
-      const h = container.clientHeight || 560;
+      const w = container.clientWidth || window.innerWidth;
+      const h = container.clientHeight || window.innerHeight;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
     };
 
     const resizeObserver = new ResizeObserver(handleResize);
@@ -629,6 +680,7 @@ export default function Lunar3DEnvironment({
     const onCanvasPointerDown = () => {
       if (cameraModeRef.current === 'CHASE') {
         setCameraMode('ORBIT');
+        if (onCameraModeChange) onCameraModeChange('ORBIT');
       }
     };
     domEl.addEventListener('pointerdown', onCanvasPointerDown);
@@ -690,12 +742,12 @@ export default function Lunar3DEnvironment({
       const phys = roverPhysics.current;
 
       // -------------------------------------------------------------
-      // 2. SPEED LIMITS, SLOPE GRAVITY & REGOLITH TRACTION
+      // 2. SPEED LIMITS, SLOPE GRAVITY & REGOLITH TRACTION (Responsive High-Speed Tuning)
       // -------------------------------------------------------------
-      let maxForwardSpeed = 3.2; // Nominal m/s (~11.5 km/h)
-      if (speedModeRef.current === 'CAUTIOUS') maxForwardSpeed = 1.8;
-      else if (boost || speedModeRef.current === 'DASH') maxForwardSpeed = 4.8;
-      const maxReverseSpeed = -1.6;
+      let maxForwardSpeed = 9.0; // Nominal m/s (~32.4 km/h) - fast responsive lunar exploration
+      if (speedModeRef.current === 'CAUTIOUS') maxForwardSpeed = 4.5;
+      else if (boost || speedModeRef.current === 'DASH') maxForwardSpeed = 16.0; // Dash / Boost (~57.6 km/h)
+      const maxReverseSpeed = -5.5;
 
       // Calculate terrain normal & directional slope gradient
       const normal = getTerrainNormal(phys.x, phys.z);
@@ -710,36 +762,36 @@ export default function Lunar3DEnvironment({
       const gravitySlopeAccel = -slopeGrad * 1.62;
 
       // Lunar regolith traction factor (slip on steep slopes > 15°)
-      const tractionCoeff = Math.max(0.25, 1.0 - Math.max(0, Math.abs(slopeGrad) - 0.24) * 2.5);
+      const tractionCoeff = Math.max(0.35, 1.0 - Math.max(0, Math.abs(slopeGrad) - 0.24) * 2.2);
 
       // -------------------------------------------------------------
-      // 3. ACCELERATION & DECELERATION PHYSICS (Heavy Inertia)
+      // 3. ACCELERATION & DECELERATION PHYSICS (Punchy, Agile Driving)
       // -------------------------------------------------------------
       const currentV = phys.velocity;
 
       if (brake) {
-        // Friction brake
-        const brakeForce = 7.5 * delta;
+        // Friction brake - rapid response
+        const brakeForce = 18.0 * delta;
         if (currentV > 0) phys.velocity = Math.max(0, currentV - brakeForce);
         else if (currentV < 0) phys.velocity = Math.min(0, currentV + brakeForce);
       } else if (forward && !reverse) {
-        // Heavy vehicle gradual acceleration (~1.6 m/s^2)
-        const accel = 1.6 * tractionCoeff * delta;
+        // High-torque brushless hub motors acceleration (~6.5 m/s^2)
+        const accel = 6.5 * tractionCoeff * delta;
         const uphillOppose = slopeGrad > 0 ? gravitySlopeAccel * 0.8 * delta : 0;
-        const effMaxSpeed = Math.max(0.8, maxForwardSpeed * tractionCoeff - (slopeGrad > 0 ? slopeGrad * 2.8 : 0));
+        const effMaxSpeed = Math.max(2.0, maxForwardSpeed * tractionCoeff - (slopeGrad > 0 ? slopeGrad * 2.0 : 0));
         phys.velocity = Math.min(effMaxSpeed, currentV + accel + uphillOppose);
       } else if (reverse && !forward) {
         // Progressive footbrake first if rolling forward
         if (currentV > 0.25) {
-          phys.velocity = Math.max(0, currentV - 4.5 * delta);
+          phys.velocity = Math.max(0, currentV - 14.0 * delta);
         } else {
-          // Reverse acceleration (~1.3 m/s^2)
-          const revAccel = 1.3 * tractionCoeff * delta;
+          // Reverse acceleration (~4.5 m/s^2)
+          const revAccel = 4.5 * tractionCoeff * delta;
           phys.velocity = Math.max(maxReverseSpeed, currentV - revAccel);
         }
       } else {
-        // Coasting with regolith rolling resistance (~2.2 m/s^2)
-        const coastDrag = 2.2 * delta;
+        // Coasting with regolith rolling resistance
+        const coastDrag = 3.5 * delta;
         if (currentV > 0) {
           phys.velocity = Math.max(0, currentV - coastDrag + (gravitySlopeAccel * 0.3 * delta));
         } else if (currentV < 0) {
@@ -750,25 +802,28 @@ export default function Lunar3DEnvironment({
       if (Math.abs(phys.velocity) < 0.005) phys.velocity = 0;
 
       // -------------------------------------------------------------
-      // 4. SPEED-DEPENDENT STEERING & TURNING RADIUS
+      // 4. SPEED-DEPENDENT STEERING & POINT-TURN RADIUS
       // -------------------------------------------------------------
       const maxSteerAngle = 0.52; // ~30 degrees max steer
       let targetSteer = 0;
       if (steerLeft && !steerRight) targetSteer = -maxSteerAngle;
       else if (steerRight && !steerLeft) targetSteer = maxSteerAngle;
 
-      // Smooth steering interpolation (eliminates sudden rotation snaps)
-      phys.steerAngle += (targetSteer - phys.steerAngle) * Math.min(1.0, delta * 4.5);
+      // Smooth steering interpolation (rapid response)
+      phys.steerAngle += (targetSteer - phys.steerAngle) * Math.min(1.0, delta * 7.5);
 
       // Kinematic turning rate: omega = (v / Wheelbase) * tan(steerAngle)
       const wheelbase = 2.24;
       let angularVelocity = (phys.velocity / wheelbase) * Math.tan(phys.steerAngle);
 
-      // Low-speed pivot crawl when applying throttle + steering from standstill
-      if (Math.abs(phys.velocity) < 0.25 && (forward || reverse) && Math.abs(phys.steerAngle) > 0.15) {
-        const crawlDir = (forward ? 1 : -1) * Math.sign(phys.steerAngle);
-        angularVelocity = crawlDir * 0.22;
+      // Responsive point-turn / zero-radius pivot when steering at standstill or low speed
+      if (Math.abs(phys.velocity) < 1.2 && (steerLeft || steerRight)) {
+        const turnSign = steerRight ? 1 : -1;
+        angularVelocity = turnSign * 1.35;
       }
+
+      // Smoothly cap turning rate at high speed to prevent spinouts
+      angularVelocity = Math.max(-2.2, Math.min(2.2, angularVelocity));
 
       // Update rover heading
       phys.heading += angularVelocity * delta;
@@ -862,7 +917,7 @@ export default function Lunar3DEnvironment({
 
       // TRIDENT Drill animation when drilling
       if (isDrillingRef.current && drillGroupRef.current) {
-        drillGroupRef.current.position.y = 0.5 + Math.sin(time * 0.05) * 0.25;
+        drillGroupRef.current.position.y = 0.22 + Math.sin(time * 0.08) * 0.24;
       } else if (drillGroupRef.current) {
         drillGroupRef.current.position.y = 0.5;
       }
@@ -911,15 +966,15 @@ export default function Lunar3DEnvironment({
       } else if (activeCamMode === 'CHASE') {
         if (controls) controls.enabled = false;
 
-        phys.camFocus.x += (phys.x - phys.camFocus.x) * Math.min(1.0, delta * 5.0);
-        phys.camFocus.z += (phys.z - phys.camFocus.z) * Math.min(1.0, delta * 5.0);
-        phys.camFocus.y += (phys.y - phys.camFocus.y) * Math.min(1.0, delta * 3.0);
+        phys.camFocus.x += (phys.x - phys.camFocus.x) * Math.min(1.0, delta * 8.0);
+        phys.camFocus.z += (phys.z - phys.camFocus.z) * Math.min(1.0, delta * 8.0);
+        phys.camFocus.y += (phys.y - phys.camFocus.y) * Math.min(1.0, delta * 5.5);
         const targetPos = phys.camFocus;
 
         let diffH = phys.heading - phys.camYaw;
         while (diffH < -Math.PI) diffH += Math.PI * 2;
         while (diffH > Math.PI) diffH -= Math.PI * 2;
-        phys.camYaw += diffH * Math.min(1.0, delta * 3.8);
+        phys.camYaw += diffH * Math.min(1.0, delta * 5.5);
 
         const offsetBack = 18.0;
         const offsetUp = 7.5;
@@ -1292,167 +1347,184 @@ export default function Lunar3DEnvironment({
   }
 
   return (
-    <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-cyan-500/30 bg-black shadow-[0_0_25px_rgba(0,240,255,0.15)] group">
+    <div className={isFullScreen ? "relative w-full h-full overflow-hidden bg-black select-none" : "relative w-full aspect-square rounded-lg overflow-hidden border border-cyan-500/30 bg-black shadow-[0_0_25px_rgba(0,240,255,0.15)] group"}>
       {/* Three.js Canvas Container */}
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
       {/* Top HUD Telemetry Banner */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
-        <div className="bg-space-950/85 backdrop-blur border border-cyan-500/40 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-200 flex items-center space-x-2.5 shadow-lg">
-          <span className={`w-2 h-2 rounded-full ${telemetry.illumPercent === 0 ? 'bg-red-500 animate-ping' : 'bg-cyan-400 animate-pulse'}`} />
-          <span className="font-bold text-cyan-300">3D POLAR HORIZON</span>
-          <span className="text-slate-500">|</span>
-          <span className="text-[11px] text-slate-300">
-            SUN: <strong className={telemetry.illumPercent > 0 ? 'text-amber-300' : 'text-red-400'}>{telemetry.illumPercent}%</strong>
-          </span>
-          <span className="text-slate-500">|</span>
-          <span className="text-[11px] text-slate-300">
-            PITCH: <strong>{telemetry.pitchDeg}°</strong>
-          </span>
-          <span className="text-slate-500">|</span>
-          <span className="text-[11px] text-cyan-300">
-            SPD: <strong>{telemetry.speedMps} m/s</strong>
-          </span>
-          <span className="text-slate-500">|</span>
-          <span className="text-[11px] text-slate-300">
-            ALT: <strong>{telemetry.elevationM}m</strong>
-          </span>
-        </div>
+      {!hideInternalHUD && (
+        <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
+          <div className="bg-space-950/85 backdrop-blur border border-cyan-500/40 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-200 flex items-center space-x-2.5 shadow-lg">
+            <span className={`w-2 h-2 rounded-full ${telemetry.illumPercent === 0 ? 'bg-red-500 animate-ping' : 'bg-cyan-400 animate-pulse'}`} />
+            <span className="font-bold text-cyan-300">3D POLAR HORIZON</span>
+            <span className="text-slate-500">|</span>
+            <span className="text-[11px] text-slate-300">
+              SUN: <strong className={telemetry.illumPercent > 0 ? 'text-amber-300' : 'text-red-400'}>{telemetry.illumPercent}%</strong>
+            </span>
+            <span className="text-slate-500">|</span>
+            <span className="text-[11px] text-slate-300">
+              PITCH: <strong>{telemetry.pitchDeg}°</strong>
+            </span>
+            <span className="text-slate-500">|</span>
+            <span className="text-[11px] text-cyan-300">
+              SPD: <strong>{telemetry.speedMps} m/s</strong>
+            </span>
+            <span className="text-slate-500">|</span>
+            <span className="text-[11px] text-slate-300">
+              ALT: <strong>{telemetry.elevationM}m</strong>
+            </span>
+          </div>
 
-        {/* Camera Selector Pills & Reset Button */}
-        <div className="pointer-events-auto flex items-center space-x-1 bg-space-950/85 backdrop-blur border border-slate-700/80 p-1 rounded-lg">
-          <button
-            onClick={() => setCameraMode('CHASE')}
-            className={`px-2.5 py-1 rounded font-mono text-[10px] transition-all ${cameraMode === 'CHASE'
-                ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.5)]'
-                : 'text-slate-400 hover:text-slate-200'
-              }`}
-            title="Follow directly behind rover"
-          >
-            CHASE
-          </button>
-          <button
-            onClick={() => setCameraMode('ORBIT')}
-            className={`px-2.5 py-1 rounded font-mono text-[10px] transition-all ${cameraMode === 'ORBIT'
-                ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.5)]'
-                : 'text-slate-400 hover:text-slate-200'
-              }`}
-            title="Click and drag to rotate 360°"
-          >
-            ORBIT
-          </button>
-          <button
-            onClick={() => setCameraMode('PANORAMA')}
-            className={`px-2.5 py-1 rounded font-mono text-[10px] transition-all ${cameraMode === 'PANORAMA'
-                ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.5)]'
-                : 'text-slate-400 hover:text-slate-200'
-              }`}
-            title="Wide panoramic ridge view"
-          >
-            PANORAMA
-          </button>
-          <button
-            onClick={handleResetCamera}
-            className="px-2 py-1 rounded font-mono text-[10px] text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 transition-all border border-amber-500/40 flex items-center space-x-1"
-            title="Reset camera view to default rover follow angle"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>RESET</span>
-          </button>
+          {/* Camera Selector Pills & Reset Button */}
+          <div className="pointer-events-auto flex items-center space-x-1 bg-space-950/85 backdrop-blur border border-slate-700/80 p-1 rounded-lg">
+            <button
+              onClick={() => {
+                setCameraMode('CHASE');
+                if (onCameraModeChange) onCameraModeChange('CHASE');
+              }}
+              className={`px-2.5 py-1 rounded font-mono text-[10px] transition-all cursor-pointer ${cameraMode === 'CHASE'
+                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.5)]'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+              title="Follow directly behind rover"
+            >
+              CHASE
+            </button>
+            <button
+              onClick={() => {
+                setCameraMode('ORBIT');
+                if (onCameraModeChange) onCameraModeChange('ORBIT');
+              }}
+              className={`px-2.5 py-1 rounded font-mono text-[10px] transition-all cursor-pointer ${cameraMode === 'ORBIT'
+                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.5)]'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+              title="Click and drag to rotate 360°"
+            >
+              ORBIT
+            </button>
+            <button
+              onClick={() => {
+                setCameraMode('PANORAMA');
+                if (onCameraModeChange) onCameraModeChange('PANORAMA');
+              }}
+              className={`px-2.5 py-1 rounded font-mono text-[10px] transition-all cursor-pointer ${cameraMode === 'PANORAMA'
+                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_8px_rgba(0,240,255,0.5)]'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+              title="Wide panoramic ridge view"
+            >
+              PANORAMA
+            </button>
+            <button
+              onClick={handleResetCamera}
+              className="px-2 py-1 rounded font-mono text-[10px] text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 transition-all border border-amber-500/40 flex items-center space-x-1 cursor-pointer"
+              title="Reset camera view to default rover follow angle"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>RESET</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Top-Right Live Interactive Lunar Minimap HUD Overlay */}
-      <div className="absolute top-14 right-3 z-10 pointer-events-auto">
-        {minimapCollapsed ? (
-          <button
-            onClick={() => setMinimapCollapsed(false)}
-            className="bg-space-950/85 backdrop-blur border border-cyan-500/40 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold text-cyan-300 hover:text-cyan-100 hover:border-cyan-400 flex items-center space-x-1.5 shadow-lg transition-all"
-            title="Expand Lunar Radar Minimap"
-          >
-            <Compass className="w-3.5 h-3.5 text-cyan-400" />
-            <span>RADAR [EXPAND]</span>
-          </button>
-        ) : (
-          <div className="w-44 bg-space-950/90 backdrop-blur-md border border-cyan-500/40 rounded-lg p-2 shadow-[0_0_20px_rgba(0,240,255,0.2)] flex flex-col space-y-1.5 transition-all">
-            {/* Header: Title & Map Controls */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-1 text-[9px] font-mono">
-              <div className="flex items-center space-x-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="font-bold text-cyan-300 tracking-wider">NAV RADAR</span>
+      {!hideMinimap && (
+        <div className="absolute top-14 right-3 z-10 pointer-events-auto">
+          {minimapCollapsed ? (
+            <button
+              onClick={() => setMinimapCollapsed(false)}
+              className="bg-space-950/85 backdrop-blur border border-cyan-500/40 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold text-cyan-300 hover:text-cyan-100 hover:border-cyan-400 flex items-center space-x-1.5 shadow-lg transition-all cursor-pointer"
+              title="Expand Lunar Radar Minimap"
+            >
+              <Compass className="w-3.5 h-3.5 text-cyan-400" />
+              <span>RADAR [EXPAND]</span>
+            </button>
+          ) : (
+            <div className="w-44 bg-space-950/90 backdrop-blur-md border border-cyan-500/40 rounded-lg p-2 shadow-[0_0_20px_rgba(0,240,255,0.2)] flex flex-col space-y-1.5 transition-all">
+              {/* Header: Title & Map Controls */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1 text-[9px] font-mono">
+                <div className="flex items-center space-x-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  <span className="font-bold text-cyan-300 tracking-wider">NAV RADAR</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => setMinimapOrientation(prev => prev === 'NORTH' ? 'ROVER' : 'NORTH')}
+                    className={`px-1.5 py-0.5 rounded text-[8px] font-bold border transition-all cursor-pointer ${minimapOrientation === 'NORTH'
+                        ? 'border-amber-500/50 text-amber-300 bg-amber-500/10'
+                        : 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10'
+                      }`}
+                    title="Toggle North-Up vs Rover-Heading Up"
+                  >
+                    {minimapOrientation === 'NORTH' ? 'N-UP' : 'R-UP'}
+                  </button>
+                  <button
+                    onClick={() => setMinimapZoom(prev => Math.min(2.4, prev + 0.3))}
+                    className="px-1.5 py-0.5 rounded text-[9px] text-slate-300 hover:text-white bg-slate-800/80 border border-slate-700 cursor-pointer"
+                    title="Zoom In"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => setMinimapZoom(prev => Math.max(0.8, prev - 0.3))}
+                    className="px-1.5 py-0.5 rounded text-[9px] text-slate-300 hover:text-white bg-slate-800/80 border border-slate-700 cursor-pointer"
+                    title="Zoom Out"
+                  >
+                    -
+                  </button>
+                  <button
+                    onClick={() => setMinimapCollapsed(true)}
+                    className="p-0.5 text-slate-400 hover:text-slate-200 cursor-pointer"
+                    title="Collapse Radar"
+                  >
+                    <Minimize2 className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center space-x-1">
-                <button
-                  onClick={() => setMinimapOrientation(prev => prev === 'NORTH' ? 'ROVER' : 'NORTH')}
-                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold border transition-all ${minimapOrientation === 'NORTH'
-                      ? 'border-amber-500/50 text-amber-300 bg-amber-500/10'
-                      : 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10'
-                    }`}
-                  title="Toggle North-Up vs Rover-Heading Up"
-                >
-                  {minimapOrientation === 'NORTH' ? 'N-UP' : 'R-UP'}
-                </button>
-                <button
-                  onClick={() => setMinimapZoom(prev => Math.min(2.4, prev + 0.3))}
-                  className="px-1.5 py-0.5 rounded text-[9px] text-slate-300 hover:text-white bg-slate-800/80 border border-slate-700"
-                  title="Zoom In"
-                >
-                  +
-                </button>
-                <button
-                  onClick={() => setMinimapZoom(prev => Math.max(0.8, prev - 0.3))}
-                  className="px-1.5 py-0.5 rounded text-[9px] text-slate-300 hover:text-white bg-slate-800/80 border border-slate-700"
-                  title="Zoom Out"
-                >
-                  -
-                </button>
-                <button
-                  onClick={() => setMinimapCollapsed(true)}
-                  className="p-0.5 text-slate-400 hover:text-slate-200"
-                  title="Collapse Radar"
-                >
-                  <Minimize2 className="w-3 h-3" />
-                </button>
+
+              {/* Radar Canvas */}
+              <div className="relative w-full aspect-square rounded overflow-hidden border border-slate-800 bg-black">
+                <canvas
+                  ref={minimapCanvasRef}
+                  width={160}
+                  height={160}
+                  className="w-full h-full block"
+                />
+              </div>
+
+              {/* Minimap Footer Readouts */}
+              <div className="flex items-center justify-between text-[8px] font-mono text-slate-400 px-0.5">
+                <span>X:{Math.round(roverPos.x)} Y:{Math.round(roverPos.y)}</span>
+                <span className="text-cyan-300">{Math.round(roverHeading)}°</span>
+                <span className="text-amber-400">R:{(95 / minimapZoom).toFixed(0)}m</span>
               </div>
             </div>
-
-            {/* Radar Canvas */}
-            <div className="relative w-full aspect-square rounded overflow-hidden border border-slate-800 bg-black">
-              <canvas
-                ref={minimapCanvasRef}
-                width={160}
-                height={160}
-                className="w-full h-full block"
-              />
-            </div>
-
-            {/* Minimap Footer Readouts */}
-            <div className="flex items-center justify-between text-[8px] font-mono text-slate-400 px-0.5">
-              <span>X:{Math.round(roverPos.x)} Y:{Math.round(roverPos.y)}</span>
-              <span className="text-cyan-300">{Math.round(roverHeading)}°</span>
-              <span className="text-amber-400">R:{(95 / minimapZoom).toFixed(0)}m</span>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Center-Bottom Floating Control Hint Overlay */}
-      <div className="absolute bottom-9 left-1/2 transform -translate-x-1/2 z-10 pointer-events-none">
-        <div className="bg-space-950/80 backdrop-blur-md border border-cyan-500/30 px-3.5 py-1 rounded-full text-[10px] font-mono font-bold tracking-wider text-cyan-300 flex items-center space-x-2 shadow-lg">
-          <Compass className="w-3 h-3 text-cyan-400" />
-          <span>DRAG TO ROTATE • SCROLL TO ZOOM</span>
+      {!hideInternalHUD && (
+        <div className="absolute bottom-9 left-1/2 transform -translate-x-1/2 z-10 pointer-events-none">
+          <div className="bg-space-950/80 backdrop-blur-md border border-cyan-500/30 px-3.5 py-1 rounded-full text-[10px] font-mono font-bold tracking-wider text-cyan-300 flex items-center space-x-2 shadow-lg">
+            <Compass className="w-3 h-3 text-cyan-400" />
+            <span>DRAG TO ROTATE • SCROLL TO ZOOM</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Bottom Educational Disclaimer & Controls Advice */}
-      <div className="absolute bottom-2 left-3 right-3 z-10 flex items-center justify-between text-[10px] font-mono text-slate-400 pointer-events-none">
-        <span className="bg-space-950/80 backdrop-blur px-2 py-0.5 rounded border border-slate-800">
-          NASA Artemis High-Fidelity Exploration Simulation // 6-Wheel Heavy Rover
-        </span>
-        <span className="bg-space-950/80 backdrop-blur px-2 py-0.5 rounded border border-slate-800">
-          Controls: WASD / Arrows to Drive • Orbit: Drag / Scroll
-        </span>
-      </div>
+      {!hideInternalHUD && (
+        <div className="absolute bottom-2 left-3 right-3 z-10 flex items-center justify-between text-[10px] font-mono text-slate-400 pointer-events-none">
+          <span className="bg-space-950/80 backdrop-blur px-2 py-0.5 rounded border border-slate-800">
+            NASA Artemis High-Fidelity Exploration Simulation // 6-Wheel Heavy Rover
+          </span>
+          <span className="bg-space-950/80 backdrop-blur px-2 py-0.5 rounded border border-slate-800">
+            Controls: WASD / Arrows to Drive • Orbit: Drag / Scroll
+          </span>
+        </div>
+      )}
     </div>
   );
 }
